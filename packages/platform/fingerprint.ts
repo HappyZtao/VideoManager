@@ -1,0 +1,3 @@
+import fs from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+export async function fingerprint(file:string){const handle=await fs.open(file,'r');try{const stat=await handle.stat();const hash=createHash('sha256').update(String(stat.size));const block=Buffer.alloc(Math.min(65536,stat.size));const first=await handle.read(block,0,block.length,0);hash.update(block.subarray(0,first.bytesRead));if(stat.size>block.length){const last=await handle.read(block,0,block.length,Math.max(0,stat.size-block.length));hash.update(block.subarray(0,last.bytesRead))}return hash.digest('hex')}finally{await handle.close()}}

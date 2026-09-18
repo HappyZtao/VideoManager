@@ -1,0 +1,64 @@
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Compiled application and packaging output
+out/
+dist/
+release/
+artifacts/
+*.blockmap
+
+# Downloaded/generated native dependencies and binaries
+# Keep native source, CMakeLists.txt and dependencies.json in Git.
+native/bin/
+native/vendor/
+
+# Build and tool caches
+.cache/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.vite/
+
+# Tests, benchmarks and generated reports
+.test-data/
+test-results/
+coverage/
+playwright-report/
+blob-report/
+
+# Local application data and databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db-shm
+*.db-wal
+
+# Logs and temporary files
+*.log
+*.log.*
+*.pid
+*.tmp
+*.temp
+*.bak
+*.stackdump
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating-system metadata
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

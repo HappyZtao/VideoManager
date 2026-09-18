@@ -1,0 +1,14 @@
+{
+  "ffmpeg": {
+    "asset": "ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
+    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
+    "sha256": "f42d1abd7782b6b5f79fc990eecc849aab03cc2c4d2bf5ad76767ac409a9ffca",
+    "published": "2026-09-17T13:36:10Z",
+    "version": "n8.1.2-54-gc573a95381-20260917"
+  },
+  "json": {
+    "version": "3.12.0",
+    "sha256": "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63",
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.12.0/single_include/nlohmann/json.hpp"
+  }
+}
