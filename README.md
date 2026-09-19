@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Windows 10 / 11" />
     <img src="https://img.shields.io/badge/architecture-x64-4C8BF5" alt="x64" />
-    <img src="https://img.shields.io/badge/version-0.1.0-18A058" alt="Version 0.1.0" />
+    <img src="https://img.shields.io/badge/version-0.5.0-18A058" alt="Version 0.5.0" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-2EA44F" alt="GNU GPL v3.0" /></a>
     <img src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white" alt="Electron 44" />
     <img src="https://img.shields.io/badge/privacy-local--first-7357C8" alt="Local first" />

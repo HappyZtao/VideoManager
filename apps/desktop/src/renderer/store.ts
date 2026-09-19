@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { QuerySpec,Selection } from '../../../../packages/contracts'
 import { querySchema } from '../../../../packages/contracts'
-export const defaultQuery:QuerySpec={folderId:null,scope:'library',text:'',kinds:[],extensions:[],tags:[],favorite:false,sort:'name',direction:'asc',minSize:null,maxSize:null,after:null,before:null,minDuration:null,maxDuration:null}
+export const defaultQuery:QuerySpec={folderId:null,scope:'library',text:'',searchFields:['name','folder','tag'],kinds:[],extensions:[],tags:[],favorite:false,sort:'name',direction:'asc',minSize:null,maxSize:null,after:null,before:null,minDuration:null,maxDuration:null}
 export type Browse={query:QuerySpec;selected:string[];snapshot:string|null;snapshotCount:number;anchor:number;anchorId:string|null}
 type UIState=Browse&{views:Record<string,Browse>;history:Browse[];future:Browse[];hydrate:(views:unknown,last:unknown)=>void;navigate:(id:string|null,scope?:QuerySpec['scope'],patch?:Partial<QuerySpec>)=>void;setQuery:(patch:Partial<QuerySpec>)=>void;select:(ids:string[],snapshot?:string|null,count?:number)=>void;back:()=>void;forward:()=>void;setAnchor:(index:number,id:string|null)=>void;reset:()=>void}
 const snapshot=(s:Browse):Browse=>({query:s.query,selected:s.selected,snapshot:s.snapshot,snapshotCount:s.snapshotCount,anchor:s.anchor,anchorId:s.anchorId})

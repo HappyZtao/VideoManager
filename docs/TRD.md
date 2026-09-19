@@ -71,20 +71,39 @@ Cordis 上游仍提示 API 可能变化，因此只允许 `cordis-adapter` 导�
 
 ```mermaid
 flowchart TB
-    UI[Renderer：React / 设计系统 / 展示插件] --> PRE[Preload：有限类型化 API]
-    PRE --> HOST[Main：窗口 / Cordis / 命令路由 / 核心协调]
-    HOST --> DBW[DB Writer：唯一写入者]
-    HOST --> DBR[DB Reader：分页 / 搜索 / 查询会话]
-    HOST --> INDEX[Index Worker：扫描 / 监听 / 任务调度]
-    HOST --> IMG[Image Worker：Sharp / 缓存衍生图]
-    HOST --> MEDIA[vm-media：FFmpeg 精确解码]
-    HOST --> FS[vm-fs：文件身份 / 受控文件操作]
-    INDEX --> FS
-    DBW --> DB[(SQLite WAL)]
-    DBR --> DB
-    FS --> FILES[用户磁盘与目录]
-    MEDIA --> FILES
-    IMG --> CACHE[可再生缓存 / 封面对象]
+    subgraph APP["VideoManager 应用"]
+        direction TB
+        UI["Renderer<br/>React · 设计系统 · 展示插件"]
+        PRE["Preload<br/>有限、类型化的 window.vm API"]
+        HOST["Main Process<br/>窗口 · IPC · Cordis · 核心协调"]
+
+        subgraph WORKERS["受控后台进程与工作线程"]
+            direction LR
+            DBW["DB Writer<br/>唯一数据库写入者"]
+            DBR["DB Reader<br/>分页 · 搜索 · 查询会话"]
+            INDEX["Index Worker<br/>目录扫描 · 索引任务"]
+            IMG["Image Worker<br/>Sharp · 缩略图 · 封面处理"]
+            MEDIA["vm-media<br/>FFmpeg 精确解码"]
+            FS["vm-fs<br/>文件身份 · 受控文件操作"]
+        end
+
+        UI -->|"调用应用能力"| PRE
+        PRE -->|"校验后的 IPC"| HOST
+        HOST --> DBW
+        HOST --> DBR
+        HOST --> INDEX
+        HOST --> IMG
+        HOST --> MEDIA
+        HOST --> FS
+        INDEX -->|"枚举与身份检查"| FS
+    end
+
+    DBW -->|"事务写入"| DB[("SQLite · WAL")]
+    DBR -->|"只读查询"| DB
+    FS -->|"受控访问"| FILES["用户磁盘与媒体目录"]
+    MEDIA -->|"读取媒体"| FILES
+    MEDIA -->|"输出临时帧"| CACHE["媒体库数据目录<br/>临时帧 · 按所选尺寸生成无损预览 · 768px 默认封面 · 手动封面对象"]
+    IMG -->|"原子写入衍生资源"| CACHE
 ```
 
 | 进程／模块 | 可持有内容 | 明确禁止 |

@@ -18,18 +18,19 @@ export function safeRelative(rel: string): boolean {
 }
 export function compileQuery(q: QuerySpec): { where: string; params: unknown[]; order: string } {
   const clauses = ["e.state='present'", 'r.active=1']; const params: unknown[] = []
-  if (q.scope === 'direct' && q.folderId) { clauses.push('e.parentId=?'); params.push(q.folderId) }
-  if (q.scope === 'descendants' && q.folderId) { clauses.push("e.kind!='folder' AND e.parentId IN (SELECT descendant FROM closure WHERE ancestor=?)"); params.push(q.folderId) }
-  if (!q.folderId && q.scope !== 'library') clauses.push('e.parentId IS NULL')
-  for (const word of q.text.normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean)) {
-    const tagMatch = 'EXISTS(SELECT 1 FROM entry_tags search_tags WHERE search_tags.entryId=e.id AND instr(lower(search_tags.tag),?)>0)'
-    if ([...word].length >= 3) {
-      clauses.push(`((e.rowid IN (SELECT rowid FROM entry_fts WHERE entry_fts MATCH ?) AND instr(e.search,?)>0) OR ${tagMatch})`)
-      params.push(`"${word.replace(/"/g, '""')}"`,word,word)
-    } else {
-      clauses.push(`(instr(e.search,?)>0 OR ${tagMatch})`)
-      params.push(word,word)
-    }
+  const words=q.text.normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean)
+  if (q.folderId && words.length) { clauses.push("((e.kind='folder' AND e.id IN (SELECT descendant FROM closure WHERE ancestor=? AND depth>0)) OR (e.kind!='folder' AND e.parentId IN (SELECT descendant FROM closure WHERE ancestor=?)))"); params.push(q.folderId,q.folderId) }
+  else {
+    if (q.scope === 'direct' && q.folderId) { clauses.push('e.parentId=?'); params.push(q.folderId) }
+    if (q.scope === 'descendants' && q.folderId) { clauses.push("e.kind!='folder' AND e.parentId IN (SELECT descendant FROM closure WHERE ancestor=?)"); params.push(q.folderId) }
+    if (!q.folderId && q.scope !== 'library') clauses.push('e.parentId IS NULL')
+  }
+  for (const word of words) {
+    const matches:string[]=[]
+    if(q.searchFields.includes('name')){matches.push("(e.kind!='folder' AND instr(lower(e.name),?)>0)");params.push(word)}
+    if(q.searchFields.includes('folder')){matches.push("((e.kind='folder' AND instr(lower(e.name),?)>0) OR (e.kind!='folder' AND instr(lower(CASE WHEN length(e.rel)>length(e.name) THEN substr(e.rel,1,length(e.rel)-length(e.name)-1) ELSE '' END),?)>0))");params.push(word,word)}
+    if(q.searchFields.includes('tag')){matches.push('EXISTS(SELECT 1 FROM entry_tags search_tags WHERE search_tags.entryId=e.id AND instr(lower(search_tags.tag),?)>0)');params.push(word)}
+    clauses.push(matches.length?`(${matches.join(' OR ')})`:'0=1')
   }
   if (q.kinds.length) { clauses.push(`e.kind IN (${q.kinds.map(()=>'?').join(',')})`); params.push(...q.kinds) }
   if (q.extensions.length) { clauses.push(`e.ext IN (${q.extensions.map(()=>'?').join(',')})`); params.push(...q.extensions.map(e=>e.toLowerCase().replace(/^\./,''))) }

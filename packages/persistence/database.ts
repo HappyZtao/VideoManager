@@ -1,3 +1,4 @@
+import {coverQualities,thumbnailName} from '../contracts/covers'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { compileQuery, naturalKey, safeRelative } from '../domain'
@@ -5,12 +6,12 @@ import type { Entry, QuerySpec, QuerySession, Selection } from '../contracts'
 
 export const schema = `
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS roots(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,entryId TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'online',identity TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS roots(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,entryId TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'online',identity TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,indexMode TEXT NOT NULL DEFAULT 'manual',intervalMinutes INTEGER NOT NULL DEFAULT 60,lastIndexedAt INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS entries(
  id TEXT UNIQUE NOT NULL,rootId TEXT NOT NULL REFERENCES roots(id),parentId TEXT,kind TEXT NOT NULL,name TEXT NOT NULL,rel TEXT NOT NULL,pathKey TEXT NOT NULL,
  ext TEXT NOT NULL DEFAULT '',size INTEGER NOT NULL DEFAULT 0,mtime REAL NOT NULL DEFAULT 0,identity TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,state TEXT NOT NULL DEFAULT 'present',
  sortKey TEXT NOT NULL,search TEXT NOT NULL,favorite INTEGER NOT NULL DEFAULT 0,width INTEGER,height INTEGER,duration REAL,codec TEXT,probeError TEXT,
- coverMode TEXT,coverHash TEXT,coverRevision INTEGER NOT NULL DEFAULT 0,coverSource TEXT,coverPts TEXT,crop TEXT,coverOriginal TEXT,
+ coverMode TEXT,coverHash TEXT,coverRevision INTEGER NOT NULL DEFAULT 0,coverSource TEXT,coverPts TEXT,crop TEXT,coverOriginal TEXT,coverQuality TEXT NOT NULL DEFAULT 'fast',
   playback REAL NOT NULL DEFAULT 0,directImages INTEGER NOT NULL DEFAULT 0,directVideos INTEGER NOT NULL DEFAULT 0,directFolders INTEGER NOT NULL DEFAULT 0,subtree INTEGER NOT NULL DEFAULT 0,other INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0,seen TEXT,fingerprint TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_paths ON entries(rootId,pathKey) WHERE state='present';
@@ -44,12 +45,16 @@ export class LibraryDatabase {
     this.db.pragma('temp_store=MEMORY')
     this.db.pragma('cache_size=-32768')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 1) throw Error('数据库由更高版本创建，请升级应用')
+    if (version > 5) throw Error('数据库由更高版本创建，请升级应用')
     if (!readonly) {
       this.db.pragma('journal_mode=WAL'); this.db.pragma('synchronous=FULL')
-      this.db.exec(schema); this.db.pragma('user_version=1')
+      this.db.exec(schema)
+      if(version<2){const columns=new Set((this.db.pragma('table_info(roots)') as Row[]).map(row=>row.name));if(!columns.has('indexMode'))this.db.exec("ALTER TABLE roots ADD COLUMN indexMode TEXT NOT NULL DEFAULT 'manual'");if(!columns.has('intervalMinutes'))this.db.exec('ALTER TABLE roots ADD COLUMN intervalMinutes INTEGER NOT NULL DEFAULT 60');if(!columns.has('lastIndexedAt'))this.db.exec('ALTER TABLE roots ADD COLUMN lastIndexedAt INTEGER NOT NULL DEFAULT 0')}
+      if(version<3){const columns=new Set((this.db.pragma('table_info(entries)') as Row[]).map(row=>row.name));if(!columns.has('coverQuality'))this.db.exec("ALTER TABLE entries ADD COLUMN coverQuality TEXT NOT NULL DEFAULT 'balanced'")}
+      if(version<4)this.db.exec("UPDATE entries SET coverHash=NULL,coverSource=NULL,coverQuality='compact',coverRevision=coverRevision+1 WHERE coverMode='auto'; UPDATE entries SET coverQuality='compact' WHERE coverMode IS NULL")
+      if(version<5)this.db.exec("UPDATE entries SET coverHash=NULL,coverSource=NULL,coverQuality='fast',coverRevision=coverRevision+1 WHERE coverMode='auto'; UPDATE entries SET coverQuality='fast' WHERE coverMode IS NULL")
+      this.db.pragma('user_version=5')
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('libraryId',?)").run(randomUUID())
-      this.db.prepare("UPDATE roots SET state='checking' WHERE active=1 AND path!=''").run()
     }
   }
   close() { this.db.close() }
@@ -58,6 +63,8 @@ export class LibraryDatabase {
   root(id: string) { return this.db.prepare('SELECT * FROM roots WHERE id=?').get(id) as Row }
   allRoots() { return this.db.prepare('SELECT * FROM roots').all() }
   rootState(id: string, state: string) { this.db.prepare('UPDATE roots SET state=? WHERE id=?').run(state,id) }
+  rootIndexed(id:string){this.db.prepare("UPDATE roots SET state='online',lastIndexedAt=? WHERE id=?").run(Date.now(),id)}
+  rootIndexing(id:string,mode:'manual'|'scheduled',intervalMinutes:number){this.db.prepare('UPDATE roots SET indexMode=?,intervalMinutes=? WHERE id=?').run(mode,intervalMinutes,id);return this.root(id)}
   archiveRoot(id: string) { this.db.prepare('UPDATE roots SET active=0 WHERE id=?').run(id) }
   addRoot(root: Row, merges: { id: string; prefix: string }[] = []) {
     return this.db.transaction(() => {
@@ -86,7 +93,7 @@ export class LibraryDatabase {
   }
   findPath(rootId: string, rel: string) { return this.db.prepare("SELECT * FROM entries WHERE rootId=? AND pathKey=? AND state='present'").get(rootId, rel) }
   findIdentity(identity: string) { return this.db.prepare('SELECT e.*,r.path AS rootPath FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.identity=?').all(identity) }
-  lookupBatch(rootId:string,items:{rel:string;identity:string}[]){const existing=this.db.prepare("SELECT id FROM entries WHERE rootId=? AND pathKey=? AND state='present'");const identity=this.db.prepare('SELECT e.id,e.rel,e.identity,r.path AS rootPath FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.identity=?');return items.map(item=>({rel:item.rel,known:!!existing.get(rootId,item.rel),matches:identity.all(item.identity)}))}
+  lookupBatch(rootId:string,items:{rel:string;identity:string}[]){const existing=this.db.prepare("SELECT id FROM entries WHERE rootId=? AND pathKey=? AND state='present'");const identity=this.db.prepare('SELECT e.id,e.rel,e.identity,r.path AS rootPath FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.identity=?');return items.map(item=>{const known=!!existing.get(rootId,item.rel);return {rel:item.rel,known,matches:known?[]:identity.all(item.identity)}})}
   ingest(items: Row[]) {
     return this.db.transaction(() => items.map(item => {
       let e = this.findPath(item.rootId,item.rel) as Row | undefined
@@ -94,6 +101,7 @@ export class LibraryDatabase {
       if (!e && item.reuseId) e = this.db.prepare('SELECT * FROM entries WHERE id=? AND identity=?').get(item.reuseId,item.identity) as Row | undefined
       if (e) {
         const changed = e.size !== item.size || Math.abs(e.mtime-item.mtime)>1
+        if(!changed&&e.parentId===item.parentId&&e.rootId===item.rootId&&e.rel===item.rel&&e.name===item.name){this.db.prepare("UPDATE entries SET seen=?,state='present' WHERE id=?").run(item.seen,e.id);return {...item,id:e.id}}
         this.db.prepare(`UPDATE entries SET parentId=@parentId,rootId=@rootId,rel=@rel,pathKey=@rel,name=@name,sortKey=@sortKey,search=@search,size=@size,mtime=@mtime,seen=@seen,state='present',revision=revision+@changed,playback=CASE WHEN @changed THEN 0 ELSE playback END,width=CASE WHEN @changed THEN NULL ELSE width END,duration=CASE WHEN @changed THEN NULL ELSE duration END,probeError=CASE WHEN @changed THEN NULL ELSE probeError END WHERE id=@id`).run({...item,id:e.id,sortKey:naturalKey(item.name),search:searchText(item.rel,item.name),changed:changed?1:0})
         if (item.kind==='folder') { this.db.prepare('DELETE FROM closure WHERE descendant=?').run(e.id); this.attachClosure(e.id,item.parentId) }
         return {...item,id:e.id}
@@ -113,6 +121,8 @@ export class LibraryDatabase {
     this.db.prepare("UPDATE entries SET subtree=(SELECT count(*) FROM entries c WHERE c.state='present' AND c.kind!='folder' AND c.parentId IN (SELECT descendant FROM closure WHERE ancestor=entries.id)) WHERE rootId=? AND kind='folder'").run(rootId)
     this.db.prepare("UPDATE entries SET coverHash=NULL,coverSource=NULL,coverRevision=coverRevision+1 WHERE coverMode='auto' AND coverSource IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM entries s WHERE s.id=entries.coverSource AND s.state='present') OR (kind='folder' AND NOT EXISTS(SELECT 1 FROM entries s JOIN closure c ON c.descendant=s.parentId WHERE s.id=entries.coverSource AND c.ancestor=entries.id)))").run()
   }
+  indexEntries(rootId:string,generation:string){return (this.db.prepare("SELECT e.*,r.state AS rootState FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.rootId=? AND e.state='present' AND (e.seen=? OR e.rel='') ORDER BY (e.kind='folder'),length(e.rel) DESC,e.sortKey").all(rootId,generation) as Row[]).map(e=>({...e,tags:[]}))}
+  refreshAncestorCovers(id:string,quality?:string){return this.db.transaction(()=>{const target=this.entry(id);if(!target.parentId||!target.coverHash)return [];const ids=this.db.prepare("SELECT e.id FROM entries e JOIN closure c ON c.ancestor=e.id WHERE c.descendant=? AND (e.coverMode IS NULL OR e.coverMode='auto') ORDER BY c.depth").pluck().all(target.parentId) as string[];const update=this.db.prepare("UPDATE entries SET coverMode='auto',coverHash=?,coverSource=?,coverPts=?,crop=?,coverQuality=?,coverRevision=coverRevision+1 WHERE id=?");for(const ancestor of ids)update.run(target.coverHash,target.id,target.coverPts,target.crop,quality??target.coverQuality,ancestor);return ids.map(ancestor=>this.entry(ancestor))})()}
   entry(id: string): Entry {
     const e=this.db.prepare('SELECT e.*,r.state AS rootState FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.id=?').get(id) as Row | undefined
     if (!e) throw Error('条目不存在')
@@ -157,10 +167,11 @@ export class LibraryDatabase {
   unprobed(rootId:string,limit=50){return (this.db.prepare("SELECT e.id FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.rootId=? AND e.kind!='folder' AND e.state='present' AND e.width IS NULL AND e.probeError IS NULL AND r.state='online' LIMIT ?").pluck().all(rootId,limit) as string[]).map(id=>this.entry(id))}
   playback(id: string,position: number,revision:number) { this.db.prepare('UPDATE entries SET playback=? WHERE id=? AND revision=?').run(position,id,revision) }
   cover(id: string,revision: number,data: Row,automatic=false) {
-    const result=this.db.prepare(`UPDATE entries SET coverMode=@mode,coverHash=@hash,coverOriginal=@original,coverSource=@source,coverPts=@pts,crop=@crop,coverRevision=coverRevision+1 WHERE id=@id AND coverRevision=@revision ${automatic?"AND (coverMode IS NULL OR coverMode='auto')":''}`).run({id,revision,mode:data.mode,hash:data.hash,original:data.original??null,source:data.source??null,pts:data.pts??null,crop:JSON.stringify(data.crop??{mode:'cover',x:.5,y:.5,zoom:1})})
+    const result=this.db.prepare(`UPDATE entries SET coverMode=@mode,coverHash=@hash,coverOriginal=@original,coverSource=@source,coverPts=@pts,crop=@crop,coverQuality=@quality,coverRevision=coverRevision+1 WHERE id=@id AND coverRevision=@revision ${automatic?"AND (coverMode IS NULL OR coverMode='auto')":''}`).run({id,revision,mode:data.mode,hash:data.hash,original:data.original??null,source:data.source??null,pts:data.pts??null,crop:JSON.stringify(data.crop??{mode:'cover',x:.5,y:.5,zoom:1}),quality:data.quality??'fast'})
     if(!result.changes&&!automatic)throw Error('封面已被其他操作修改，请重新打开编辑器')
     return result.changes
   }
+  automaticCandidates(id:string){const e=this.entry(id);if(e.kind!=='folder')return [e];const rows=this.db.prepare("SELECT id FROM entries WHERE parentId=? AND state='present' AND (kind!='folder' OR coverHash IS NOT NULL) ORDER BY CASE WHEN coverMode='manual' THEN 0 WHEN kind='image' THEN 1 WHEN coverHash IS NOT NULL THEN 2 ELSE 3 END,sortKey LIMIT 24").pluck().all(id) as string[];return rows.length?rows.map(id=>this.entry(id)):this.candidates(id)}
   candidates(id: string) {
     const e=this.entry(id);if(e.kind!=='folder')return [e]
     return (this.db.prepare("SELECT e.id FROM entries e JOIN closure c ON c.descendant=e.parentId WHERE c.ancestor=? AND e.kind!='folder' AND e.state='present' ORDER BY c.depth,e.sortKey LIMIT 240").pluck().all(id) as string[]).map(id=>this.entry(id))
@@ -168,6 +179,7 @@ export class LibraryDatabase {
   settings(patch?: Row) { if(patch)this.db.transaction(()=>{const put=this.db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)');for(const [k,v]of Object.entries(patch))put.run(k,JSON.stringify(v))})();return Object.fromEntries((this.db.prepare('SELECT * FROM settings').all() as Row[]).map(r=>[r.key,JSON.parse(r.value)])) }
   log(id: string,state: string,data: unknown) {this.db.prepare('INSERT OR REPLACE INTO operations VALUES(?,?,?,?)').run(id,state,JSON.stringify(data),Date.now())}
   operations() {return (this.db.prepare('SELECT * FROM operations ORDER BY updated DESC LIMIT 500').all() as Row[]).map(r=>({...r,data:JSON.parse(r.data)}))}
+  storageReferences(){const rows=this.db.prepare('SELECT id,revision,state,coverMode,coverHash,coverOriginal,coverRevision FROM entries').all() as Row[];const cache:string[]=[];const objects:string[]=[];for(const row of rows){if(row.coverMode==='manual'){if(row.coverHash)objects.push(row.coverHash+'.png');if(row.coverOriginal)objects.push(row.coverOriginal+'.png')}else if(row.coverHash)cache.push(row.coverHash+'.png');if(row.state==='present')cache.push(`thumb-${row.id}-${row.revision}-${row.coverRevision}.webp`,...coverQualities.map(quality=>thumbnailName(row as Entry,quality.value)))}return {cache:[...new Set(cache)],objects:[...new Set(objects)]}}
   relocate(id: string,rootId: string,parentId: string,rel: string,name: string,identities: Record<string,string>={}) {
     this.db.transaction(()=>{const e=this.entry(id); const children=this.db.prepare("SELECT * FROM entries WHERE rootId=? AND (id=? OR substr(rel,1,?)=?)").all(e.rootId,id,e.rel.length+1,e.rel+'/') as Row[]
       for(const child of children){const next=child.id===id?rel:rel+child.rel.slice(e.rel.length);this.db.prepare('UPDATE entries SET rootId=?,parentId=?,rel=?,pathKey=?,name=?,sortKey=?,search=?,identity=?,state=\'present\' WHERE id=?').run(rootId,child.id===id?parentId:child.parentId,next,next,child.id===id?name:child.name,naturalKey(child.id===id?name:child.name),searchText(next,child.id===id?name:child.name),identities[child.id]??child.identity,child.id)}
@@ -186,7 +198,7 @@ export class LibraryDatabase {
       for(const r of data.roots??[]) this.db.prepare("INSERT INTO roots(id,name,path,entryId,state,identity,active) VALUES(?,?,'',?,'offline','',1)").run(r.id,r.name,r.entryId)
       const columns=(this.db.pragma('table_info(entries)') as Row[]).map(r=>r.name as string)
       const put=this.db.prepare(`INSERT INTO entries(${columns.join(',')}) VALUES(${columns.map(c=>'@'+c).join(',')})`)
-      for(const e of data.entries??[]){if(!safeRelative(e.rel))throw Error('管理包包含非法相对路径');put.run(e)}
+      for(const e of data.entries??[]){if(!safeRelative(e.rel))throw Error('管理包包含非法相对路径');put.run({coverQuality:'fast',...e})}
       for(const t of data.entry_tags??[])this.db.prepare('INSERT INTO entry_tags VALUES(?,?)').run(t.entryId,t.tag)
       for(const s of data.settings??[])this.db.prepare('INSERT INTO settings VALUES(?,?)').run(s.key,s.value)
       this.rebuildClosure();const check=this.db.pragma('foreign_key_check');if((check as unknown[]).length)throw Error('管理包关系校验失败')
