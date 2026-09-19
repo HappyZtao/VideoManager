@@ -4,10 +4,10 @@ import { createInterface } from 'node:readline'
 export class NativeClient {
   process: ChildProcessWithoutNullStreams
   pending=new Map<string,{resolve:(value:any)=>void;reject:(err:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
-  constructor(executable: string) {
+  constructor(executable: string,onEvent?:(event:any)=>void) {
     this.process=spawn(executable,[],{stdio:'pipe',windowsHide:true,shell:false})
     createInterface({input:this.process.stdout}).on('line',line=>{
-      try { if(line.length>16*1024*1024)throw Error('Native response too large');const data=JSON.parse(line);const item=this.pending.get(data.id);if(!item)return;clearTimeout(item.timer);this.pending.delete(data.id);if(data.error)item.reject(Error(data.error));else item.resolve(data.result) }catch(error){this.fail(error as Error)}
+      try { if(line.length>16*1024*1024)throw Error('Native response too large');const data=JSON.parse(line);if(data.event){onEvent?.(data);return}const item=this.pending.get(data.id);if(!item)return;clearTimeout(item.timer);this.pending.delete(data.id);if(data.error)item.reject(Error(data.error));else item.resolve(data.result) }catch(error){this.fail(error as Error)}
     })
     this.process.stderr.on('data',()=>{})
     this.process.on('error',error=>this.fail(error));this.process.on('exit',()=>this.fail(Error('原生工作进程已退出')))

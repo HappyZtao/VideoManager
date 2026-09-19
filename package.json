@@ -1,6 +1,6 @@
 {
   "name": "videomanager",
-  "version": "0.5.0",
+  "version": "0.6.6",
   "description": "离线本地图片与视频管理工作台",
   "author": "VideoManager",
   "license": "GPL-3.0-only",
@@ -17,7 +17,8 @@
     "dist": "npm run build && electron-builder --win nsis --x64",
     "pack": "npm run build && electron-builder --win --dir --x64",
     "test:performance": "vitest run tests/performance.test.ts",
-    "test:cross-volume": "node scripts/cross-volume.mjs"
+    "test:cross-volume": "node scripts/cross-volume.mjs",
+    "fetch:mpv": "node scripts/fetch-mpv.mjs"
   },
   "build": {
     "appId": "local.videomanager.desktop",
@@ -39,7 +40,9 @@
         "from": "native/bin",
         "to": "native",
         "filter": [
-          "**/*"
+          "**/*",
+          "!mpv/installer/**",
+          "!mpv/*.bat"
         ]
       },
       {

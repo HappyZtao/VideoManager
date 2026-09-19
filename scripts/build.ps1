@@ -6,6 +6,8 @@ if (([version](& $runtimeNode -p 'process.versions.node')).Major -lt 22) {
   if (Test-Path -LiteralPath $bundledNode) { $runtimeNode = $bundledNode } else { throw 'Install Node.js 22.12 or later to build. Running the packaged application does not need Node.js.' }
 }
 $env:PATH = (Split-Path -Parent $runtimeNode) + ';' + $env:PATH
+if (!(Test-Path -LiteralPath 'native/bin/mpv/mpv.exe')) { throw 'Run npm run fetch:mpv before building the installer.' }
+if (!(Test-Path -LiteralPath 'native/bin/vm-player-host.exe')) { throw 'Run npm run build:native before building the installer.' }
 $env:ELECTRON_CACHE = Join-Path $PWD '.cache\electron'
 $env:ELECTRON_BUILDER_CACHE = Join-Path $PWD '.cache\electron-builder'
 & $runtimeNode node_modules\typescript\bin\tsc --noEmit

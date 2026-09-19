@@ -13,7 +13,8 @@ export class PluginManager {
   private failures=new Map<string,string>()
   slots=new Map<string,{id:string;config:Record<string,unknown>}>()
   async init(saved:Record<string,any>={}) {
-    for(const p of builtins){const setting=saved[p.manifest.id];if(setting?.enabled===false)continue;if(!setting&&['builtin.navigation-visual','builtin.content-list'].includes(p.manifest.id))continue;try{await this.set(p.manifest.id,true,setting?.config??p.manifest.defaults)}catch(error){this.failures.set(p.manifest.id,String(error))}}
+    for(const p of builtins){const setting=saved[p.manifest.id];if(setting?.enabled===false)continue;if(!setting&&['builtin.navigation-visual','builtin.content-list','builtin.viewer-mpv','builtin.viewer-system'].includes(p.manifest.id))continue;try{await this.set(p.manifest.id,true,setting?.config??p.manifest.defaults)}catch(error){this.failures.set(p.manifest.id,String(error))}}
+    if(!this.slots.has('viewer.video'))await this.set('builtin.viewer-video',true,{})
     if(!this.slots.has('content.layout'))await this.set('builtin.content-list',true,{cardWidth:224,fit:'cover'})
     if(!this.slots.has('navigation.presenter'))await this.set('builtin.navigation-tree',true,{})
   }
@@ -23,7 +24,7 @@ export class PluginManager {
   async set(id:string,enabled:boolean,config:Record<string,unknown>){
     const plugin=this.plugins.get(id);if(!plugin)throw Error('插件不存在');if(!plugin.manifest.platforms.includes(process.platform)||!['1','1.0.0','^1.0.0'].includes(plugin.manifest.hostApiVersion))throw Error('插件接口或平台不兼容')
     if(plugin.manifest.requires.some(r=>!['library.query','selection','thumbnail.read'].includes(r)&&!this.slots.has(r)))throw Error('PLUGIN_DEPENDENCY_MISSING：插件缺少依赖')
-    if(!enabled){if(plugin.manifest.slot==='source.provider')throw Error('本地资源是媒体库必需能力，请使用移除资源目录');await this.fibers.get(id)?.dispose();this.fibers.delete(id);if(['content.layout','navigation.presenter'].includes(plugin.manifest.slot)&&!this.slots.has(plugin.manifest.slot))await this.set(plugin.manifest.slot==='content.layout'?'builtin.content-list':'builtin.navigation-tree',true,plugin.manifest.slot==='content.layout'?{cardWidth:224,fit:'cover'}:{});return this.list()}
+    if(!enabled){if(plugin.manifest.slot==='source.provider')throw Error('本地资源是媒体库必需能力，请使用移除资源目录');await this.fibers.get(id)?.dispose();this.fibers.delete(id);if(plugin.manifest.slot==='viewer.video'&&!this.slots.has('viewer.video'))await this.set('builtin.viewer-video',true,{});if(['content.layout','navigation.presenter'].includes(plugin.manifest.slot)&&!this.slots.has(plugin.manifest.slot))await this.set(plugin.manifest.slot==='content.layout'?'builtin.content-list':'builtin.navigation-tree',true,plugin.manifest.slot==='content.layout'?{cardWidth:224,fit:'cover'}:{});return this.list()}
     if(!this.ajv.validate(plugin.manifest.configSchema,config))throw Error('配置无效：'+this.ajv.errorsText())
     const previous=this.slots.get(plugin.manifest.slot);const prior=this.fibers.get(id)
     let candidate:{id:string;config:Record<string,unknown>}|undefined

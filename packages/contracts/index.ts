@@ -33,6 +33,12 @@ export type Plan = { id: string; kind: string; items: { id: string; name: string
 export type VMEvent = { topic: string; data?: unknown; sequence: number }
 export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
 
+export type VideoPlayer='chromium'|'mpv'|'system'
+export const mpvBoundsSchema=z.object({x:z.number().int().min(0).max(32768),y:z.number().int().min(0).max(32768),width:z.number().int().min(0).max(32768),height:z.number().int().min(0).max(32768)})
+export type MpvBounds=z.infer<typeof mpvBoundsSchema>
+export type MpvAction='toggle-pause'|'seek'|'speed'|'volume'|'fullscreen'|'audio'|'subtitle'
+export type MpvState={sessionId:string;entryId:string;status:'starting'|'ready'|'closed'|'error';position:number;duration:number;aspect:number;paused:boolean;speed:number;volume:number;fullscreen:boolean;error:string}
+
 export interface VMApi {
   bootstrap(): Promise<Bootstrap>
   pickRoot(): Promise<{ grant: string; path: string; overlaps: string[] } | null>
@@ -52,6 +58,10 @@ export interface VMApi {
   organize(selection: Selection, action: 'favorite' | 'tag-add' | 'tag-remove', value: string | boolean): Promise<void>
   media(id: string, purpose: 'original' | 'thumbnail'): Promise<string>
   release(url: string): Promise<void>
+  startMpv(id:string,bounds:MpvBounds):Promise<MpvState>
+  mpvBounds(sessionId:string,bounds:MpvBounds):Promise<void>
+  mpvControl(sessionId:string,action:MpvAction,value?:number):Promise<void>
+  closeMpv(sessionId:string):Promise<void>
   playback(id: string, position: number): Promise<void>
   system(id: string, action: 'open' | 'reveal' | 'copy'): Promise<void>
   coverSource(id: string | null): Promise<CoverSource | null>
@@ -89,6 +99,7 @@ export const ipcSchemas = {
   position: z.tuple([id,id]), entry: z.tuple([id]), ancestors: z.tuple([id]), children: z.tuple([id]), freeze: z.tuple([id]),
   organize: z.tuple([selection, z.enum(['favorite', 'tag-add', 'tag-remove']), z.union([z.string().trim().min(1).max(64), z.boolean()])]),
   media: z.tuple([id, z.enum(['original', 'thumbnail'])]), release: z.tuple([z.string().max(300)]),
+  startMpv:z.tuple([id,mpvBoundsSchema]),mpvBounds:z.tuple([id,mpvBoundsSchema]),closeMpv:z.tuple([id]),mpvControl:z.tuple([id,z.enum(['toggle-pause','seek','speed','volume','fullscreen','audio','subtitle']),z.number().finite().min(0).max(1e9).optional()]),
   playback: z.tuple([id, z.number().nonnegative().max(1e9)]), system: z.tuple([id, z.enum(['open', 'reveal', 'copy'])]),
   coverSource: z.tuple([id.nullable()]), coverSnapshot: z.tuple([id]), frame: z.tuple([id, z.number().nonnegative().max(1e9), z.number().int().min(-1).max(1), z.number().int().nonnegative()]),
   closeSource: z.tuple([id]), saveCover: z.tuple([id, id, cropSchema, z.number().int().nonnegative(), z.enum(['original','high','balanced','fast','compact'])]), recommend: z.tuple([id]), restoreCover: z.tuple([id,z.number().int().nonnegative()]),

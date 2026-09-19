@@ -9,6 +9,8 @@ if (!$ffmpegFolder) {
   $ffmpegFolder = Get-ChildItem native\vendor -Directory | Where-Object Name -Like 'ffmpeg-*' | Select-Object -First 1
 }
 New-Item -ItemType Directory -Force native\bin | Out-Null
+& $compiler -std=c++17 -O2 -static-libgcc -static-libstdc++ native\player-host\main.cpp -o native\bin\vm-player-host.exe -luser32 -lgdi32
+if ($LASTEXITCODE -ne 0) { throw 'vm-player-host compilation failed' }
 & $compiler -std=c++17 -O2 -static-libgcc -static-libstdc++ native\filesystem\main.cpp -o native\bin\vm-fs.exe -lbcrypt
 if ($LASTEXITCODE -ne 0) { throw 'vm-fs compilation failed' }
 & $compiler -std=c++17 -O2 -static-libgcc -static-libstdc++ native\media\main.cpp -I "$($ffmpegFolder.FullName)\include" -L "$($ffmpegFolder.FullName)\lib" -o native\bin\vm-media.exe -lavformat -lavcodec -lavutil -lswscale
