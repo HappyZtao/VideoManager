@@ -36,7 +36,7 @@ export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]
 export type VideoPlayer='chromium'|'mpv'|'system'
 export const mpvBoundsSchema=z.object({x:z.number().int().min(0).max(32768),y:z.number().int().min(0).max(32768),width:z.number().int().min(0).max(32768),height:z.number().int().min(0).max(32768)})
 export type MpvBounds=z.infer<typeof mpvBoundsSchema>
-export type MpvAction='toggle-pause'|'seek'|'speed'|'volume'|'fullscreen'|'audio'|'subtitle'
+export type MpvAction='toggle-pause'|'seek'|'speed'|'volume'|'fullscreen'|'audio'|'subtitle'|'native-controls'
 export type MpvState={sessionId:string;entryId:string;status:'starting'|'ready'|'closed'|'error';position:number;duration:number;aspect:number;paused:boolean;speed:number;volume:number;fullscreen:boolean;error:string}
 
 export interface VMApi {
@@ -99,7 +99,7 @@ export const ipcSchemas = {
   position: z.tuple([id,id]), entry: z.tuple([id]), ancestors: z.tuple([id]), children: z.tuple([id]), freeze: z.tuple([id]),
   organize: z.tuple([selection, z.enum(['favorite', 'tag-add', 'tag-remove']), z.union([z.string().trim().min(1).max(64), z.boolean()])]),
   media: z.tuple([id, z.enum(['original', 'thumbnail'])]), release: z.tuple([z.string().max(300)]),
-  startMpv:z.tuple([id,mpvBoundsSchema]),mpvBounds:z.tuple([id,mpvBoundsSchema]),closeMpv:z.tuple([id]),mpvControl:z.tuple([id,z.enum(['toggle-pause','seek','speed','volume','fullscreen','audio','subtitle']),z.number().finite().min(0).max(1e9).optional()]),
+  startMpv:z.tuple([id,mpvBoundsSchema]),mpvBounds:z.tuple([id,mpvBoundsSchema]),closeMpv:z.tuple([id]),mpvControl:z.tuple([id,z.enum(['toggle-pause','seek','speed','volume','fullscreen','audio','subtitle','native-controls']),z.number().finite().min(0).max(1e9).optional()]),
   playback: z.tuple([id, z.number().nonnegative().max(1e9)]), system: z.tuple([id, z.enum(['open', 'reveal', 'copy'])]),
   coverSource: z.tuple([id.nullable()]), coverSnapshot: z.tuple([id]), frame: z.tuple([id, z.number().nonnegative().max(1e9), z.number().int().min(-1).max(1), z.number().int().nonnegative()]),
   closeSource: z.tuple([id]), saveCover: z.tuple([id, id, cropSchema, z.number().int().nonnegative(), z.enum(['original','high','balanced','fast','compact'])]), recommend: z.tuple([id]), restoreCover: z.tuple([id,z.number().int().nonnegative()]),

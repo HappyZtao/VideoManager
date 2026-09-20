@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Windows 10 / 11" />
     <img src="https://img.shields.io/badge/architecture-x64-4C8BF5" alt="x64" />
-    <img src="https://img.shields.io/badge/version-0.6.6-18A058" alt="Version 0.6.6" />
+    <img src="https://img.shields.io/badge/version-0.7.2-18A058" alt="Version 0.7.2" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-2EA44F" alt="GNU GPL v3.0" /></a>
     <img src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white" alt="Electron 44" />
     <img src="https://img.shields.io/badge/privacy-local--first-7357C8" alt="Local first" />
@@ -70,7 +70,7 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
 在 **设置与插件 → 功能插件 → 视频播放方式** 中选择：
 
 - **Chromium**：在应用内播放，保留现有倍速、续播及全屏操作。
-- **mpv**：随安装包提供，在应用内同一个播放弹窗中播放，支持更广泛的容器与编码、字幕及音轨切换。应用内可控制暂停、定位、倍速、音量、全屏及选帧，并保存播放进度。
+- **mpv**：随安装包提供，在应用内同一个播放弹窗中播放，支持更广泛的容器与编码、字幕及音轨切换。应用内可控制暂停、定位、倍速、音量、全屏及选帧，并保存播放进度。全屏采用 mpv 原生浮动控制器，自动显隐时保持视频区域尺寸不变。
 - **系统默认应用**：遵循 Windows 文件关联；播放控制和进度由外部应用管理。
 
 三种方式以互斥功能插件提供，选择保存在当前媒体库中。关闭查看器或切换媒体库时，应用会关闭自己启动的 mpv 会话；不会结束用户另行启动的播放器。

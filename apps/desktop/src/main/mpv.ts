@@ -8,26 +8,26 @@ import type {Entry,MpvState,MpvAction,MpvBounds} from '../../../../packages/cont
 import {NativeClient} from '../../../../packages/platform/native'
 
 type Pending={resolve:(value:unknown)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}
-type Session={seekQueue:Promise<void>;seekWait?:{started:boolean;complete:()=>void;fail:(error:Error)=>void};host:NativeClient;entry:Entry;state:MpvState;process:ChildProcess;socket?:net.Socket;pending:Map<number,Pending>;sequence:number;ended:boolean;lastEvent:number;lastSave:number;save:Promise<unknown>;loading?:{resolve:()=>void;reject:(error:Error)=>void}}
+type Session={controlsQueue:Promise<void>;controlsEnabled:boolean;seekQueue:Promise<void>;seekWait?:{started:boolean;complete:()=>void;fail:(error:Error)=>void};host:NativeClient;entry:Entry;state:MpvState;process:ChildProcess;socket?:net.Socket;pending:Map<number,Pending>;sequence:number;ended:boolean;lastEvent:number;lastSave:number;save:Promise<unknown>;loading?:{resolve:()=>void;reject:(error:Error)=>void}}
 
 /** Own only the player process launched by this library. Paths never enter a shell. */
 export class MpvPlayer {
  private current:Session|undefined
  private queue:Promise<unknown>=Promise.resolve()
  private disposed=false
- constructor(private executable:string,private persist:(id:string,position:number,revision:number)=>Promise<unknown>,private emit:(state:MpvState)=>void,private pointer:(event:{sessionId:string;x:number;y:number})=>void){}
+ constructor(private executable:string,private persist:(id:string,position:number,revision:number)=>Promise<unknown>,private emit:(state:MpvState)=>void,private action:(event:{sessionId:string;action:string;position?:number})=>void){}
  private serial<T>(action:()=>Promise<T>):Promise<T>{const result=this.queue.then(action,action);this.queue=result.catch(()=>{});return result}
  async open(entry:Entry,file:string,parent:number,bounds:MpvBounds):Promise<MpvState>{return this.serial(async()=>{
   if(this.disposed)throw Error('播放器已关闭')
   await this.stopCurrent()
   await fs.access(this.executable).catch(()=>{throw Error('mpv 组件缺失，请重新安装完整安装包，或切换到 Chromium / 系统默认应用')})
   const sessionId=randomUUID(),pipe='\\\\.\\pipe\\videomanager-mpv-'+sessionId
-  const host=new NativeClient(path.resolve(path.dirname(this.executable),'..','vm-player-host.exe'),event=>{if(event.event==='pointer'&&this.current?.state.sessionId===sessionId&&!this.current.ended)this.pointer({sessionId,x:event.x,y:event.y})})
+  const host=new NativeClient(path.resolve(path.dirname(this.executable),'..','vm-player-host.exe'))
   let surface:number
   try{surface=await host.call('create',{parent,...bounds,visible:false})}catch(error){host.close();throw error}
   const start=entry.playback>0&&(!entry.duration||entry.playback<entry.duration-2)?entry.playback:0
-  const process=spawn(this.executable,['--no-config','--load-scripts=no','--ytdl=no','--idle=yes','--keep-open=yes','--force-window=yes','--pause=yes','--hwdec=auto-safe','--keepaspect=yes','--video-unscaled=no','--video-zoom=0','--panscan=0','--wid='+surface,'--osc=no','--input-default-bindings=no','--input-vo-keyboard=no','--input-cursor=no','--window-dragging=no','--title=VideoManager · '+entry.name,'--input-ipc-server='+pipe,'--start='+start],{shell:false,windowsHide:true,stdio:'ignore'})
-  const session:Session={seekQueue:Promise.resolve(),host,entry,process,pending:new Map(),sequence:0,ended:false,lastEvent:0,lastSave:Date.now(),save:Promise.resolve(),state:{sessionId,entryId:entry.id,status:'starting',position:start,duration:entry.duration??0,aspect:entry.width&&entry.height?entry.width/entry.height:16/9,paused:true,speed:1,volume:100,fullscreen:false,error:''}}
+  const process=spawn(this.executable,['--no-config','--load-scripts=no','--ytdl=no','--idle=yes','--keep-open=yes','--force-window=yes','--pause=yes','--hwdec=auto-safe','--keepaspect=yes','--video-unscaled=no','--video-zoom=0','--panscan=0','--wid='+surface,'--osc=no','--script='+path.resolve(path.dirname(this.executable),'..','player-controls.lua'),'--input-default-bindings=no','--input-vo-keyboard=yes','--input-cursor=yes','--cursor-autohide=2000','--window-dragging=no','--title=VideoManager · '+entry.name,'--input-ipc-server='+pipe,'--start='+start],{shell:false,windowsHide:true,stdio:'ignore'})
+  const session:Session={controlsQueue:Promise.resolve(),controlsEnabled:false,seekQueue:Promise.resolve(),host,entry,process,pending:new Map(),sequence:0,ended:false,lastEvent:0,lastSave:Date.now(),save:Promise.resolve(),state:{sessionId,entryId:entry.id,status:'starting',position:start,duration:entry.duration??0,aspect:entry.width&&entry.height?entry.width/entry.height:16/9,paused:true,speed:1,volume:100,fullscreen:false,error:''}}
   this.current=session;this.publish(session)
   host.process.on('exit',()=>{if(!session.ended){session.state.error='播放画面已关闭';void this.stop(session,'error')}})
   process.on('error',error=>{session.state.error=error.message;this.finish(session,'error')})
@@ -70,6 +70,10 @@ export class MpvPlayer {
  }
  private receive(session:Session,message:any){
   if(message.request_id){const pending=session.pending.get(message.request_id);if(pending){clearTimeout(pending.timer);session.pending.delete(message.request_id);if(message.error&&message.error!=='success')pending.reject(Error(message.error));else pending.resolve(message.data)}return}
+  if(message.event==='client-message'&&!session.ended){
+   if(message.args?.[0]==='vm-exit-fullscreen')this.action({sessionId:session.state.sessionId,action:'exit-fullscreen'})
+   if(message.args?.[0]==='vm-cover')void this.command(session,['set_property','pause',true]).then(()=>this.command(session,['get_property','time-pos'])).then(position=>{if(!session.ended&&typeof position==='number')this.action({sessionId:session.state.sessionId,action:'cover',position})}).catch(()=>{})
+  }
   if(message.event==='property-change'){
    const value=message.data
    switch(message.name){
@@ -118,6 +122,17 @@ export class MpvPlayer {
    void this.command(session,['seek',target,'absolute+exact']).then(()=>this.command(session,['get_property','time-pos'])).then(position=>{if(typeof position==='number'&&Math.abs(position-target)<.001)waiter.complete()}).catch(fail)
   })
  }
+ // Wait for the OSD controller to acknowledge its input bindings and visibility.
+ private async nativeControls(session:Session){
+  const enabled=session.controlsEnabled,deadline=Date.now()+2500
+  while(!session.ended&&session.controlsEnabled===enabled){
+   await this.command(session,['script-message','vm-controls',enabled?'yes':'no'])
+   const applied=await this.command(session,['get_property','user-data/vm-controls/enabled']).catch(()=>null)
+   if(applied===enabled)return
+   if(Date.now()>=deadline)throw Error('mpv 原生控制器未能启用，请重新打开视频')
+   await new Promise(resolve=>setTimeout(resolve,50))
+  }
+ }
  private async stopCurrent(){if(this.current)await this.stop(this.current)}
  async bounds(sessionId:string,bounds:MpvBounds){const session=this.current;if(session?.state.sessionId===sessionId&&!session.ended)await session.host.call('bounds',bounds)}
  close(sessionId:string){return this.serial(async()=>{if(this.current?.state.sessionId===sessionId)await this.stopCurrent()})}
@@ -126,6 +141,11 @@ export class MpvPlayer {
  async control(sessionId:string,action:MpvAction,value?:number){
   const session=this.current;if(!session||session.state.sessionId!==sessionId||session.ended)throw Error('mpv 播放窗口已关闭')
   if(action==='toggle-pause')await this.command(session,['cycle','pause'])
+  else if(action==='native-controls'){
+   session.controlsEnabled=!!value
+   const next=session.controlsQueue.then(()=>this.nativeControls(session))
+   session.controlsQueue=next.catch(()=>{});await next
+  }
   else if(action==='fullscreen')await this.command(session,['cycle','fullscreen'])
   else if(action==='audio')await this.command(session,['cycle','aid'])
   else if(action==='subtitle')await this.command(session,['cycle','sid'])

@@ -3,6 +3,13 @@
 
 // The host owns a clipped child surface only; it never creates a top-level player.
 HWND surface=nullptr,owner=nullptr;
+// mpv disables its child HWND in --wid mode. Our owned surface must opt it
+// back into native input so OSD mouse movement, clicks and capture can work.
+void enablePlayerInput(){
+ if(!surface)return;
+ HWND player=FindWindowExW(surface,nullptr,L"mpv",nullptr);
+ if(player&&!IsWindowEnabled(player))EnableWindow(player,TRUE);
+}
 LRESULT CALLBACK windowProc(HWND hwnd,UINT message,WPARAM w,LPARAM l){
  if(message==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
  return DefWindowProcW(hwnd,message,w,l);
@@ -13,6 +20,7 @@ void bounds(const json&r){
  int x=std::clamp(r.at("x").get<int>(),0,int(client.right)),y=std::clamp(r.at("y").get<int>(),0,int(client.bottom));
  int width=std::clamp(r.at("width").get<int>(),0,std::max(0,int(client.right)-x));
  int height=std::clamp(r.at("height").get<int>(),0,std::max(0,int(client.bottom)-y));
+ enablePlayerInput();
  wincheck(SetWindowPos(surface,HWND_TOP,x,y,width,height,SWP_NOACTIVATE|((width&&height&&r.value("visible",true))?SWP_SHOWWINDOW:SWP_HIDEWINDOW)),"Position video surface");
 }
 json command(const json&r){
@@ -33,17 +41,12 @@ int main(){
  auto dpi=reinterpret_cast<BOOL(WINAPI*)(HANDLE)>(GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDpiAwarenessContext"));
  if(dpi)dpi(reinterpret_cast<HANDLE>(-4));
  WNDCLASSW cls{};cls.lpfnWndProc=windowProc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"VideoManagerMpvSurface";cls.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&cls);
- POINT lastPointer{-1,-1};ULONGLONG lastPoll=0;
+ ULONGLONG lastInputCheck=0;
  std::string buffer;HANDLE input=GetStdHandle(STD_INPUT_HANDLE);bool running=true;
  while(running){
   MSG msg;while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT)running=false;TranslateMessage(&msg);DispatchMessageW(&msg);}
   if(owner&&!IsWindow(owner))break;
-  if(owner&&GetTickCount64()-lastPoll>=40){
-   lastPoll=GetTickCount64();POINT point{};GetCursorPos(&point);
-   if(point.x!=lastPointer.x||point.y!=lastPointer.y){lastPointer=point;ScreenToClient(owner,&point);RECT rect{};GetClientRect(owner,&rect);
-    if(GetForegroundWindow()==GetAncestor(owner,GA_ROOT)&&PtInRect(&rect,point))std::cout<<json{{"event","pointer"},{"x",point.x},{"y",point.y}}.dump()<<std::endl;
-   }
-  }
+  if(GetTickCount64()-lastInputCheck>=100){lastInputCheck=GetTickCount64();enablePlayerInput();}
   DWORD available=0;if(!PeekNamedPipe(input,nullptr,0,nullptr,&available,nullptr))break;
   if(!available){Sleep(8);continue;}
   char bytes[8192];DWORD read=0;if(!ReadFile(input,bytes,std::min(available,DWORD(sizeof(bytes))),&read,nullptr)||!read)break;

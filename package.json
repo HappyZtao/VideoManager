@@ -1,6 +1,6 @@
 {
   "name": "videomanager",
-  "version": "0.6.6",
+  "version": "0.7.2",
   "description": "离线本地图片与视频管理工作台",
   "author": "VideoManager",
   "license": "GPL-3.0-only",
@@ -30,7 +30,14 @@
     "files": [
       "out/**/*",
       "package.json",
-      "!node_modules/better-sqlite3/prebuilds/{linux*,darwin*,win32-arm64*}"
+      "!node_modules/better-sqlite3/prebuilds/{linux*,darwin*,win32-arm64*}",
+      "!node_modules/better-sqlite3/{deps,src}/**",
+      "!node_modules/better-sqlite3/binding.gyp",
+      "!node_modules/sharp/{src,install}/**",
+      "!node_modules/**/{test,tests,__tests__,example,examples,benchmark,benchmarks}/**",
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.d.ts",
+      "!out/**/*.map"
     ],
     "asarUnpack": [
       "**/*.node"
@@ -40,9 +47,24 @@
         "from": "native/bin",
         "to": "native",
         "filter": [
-          "**/*",
-          "!mpv/installer/**",
-          "!mpv/*.bat"
+          "vm-fs.exe",
+          "vm-media.exe",
+          "vm-player-host.exe",
+          "avcodec-62.dll",
+          "avformat-62.dll",
+          "avutil-60.dll",
+          "swscale-9.dll",
+          "swresample-6.dll",
+          "libwinpthread-1.dll",
+          "LICENSE*",
+          "ffmpeg-manifest.json",
+          "mpv/mpv.exe",
+          "mpv/*.dll",
+          "mpv/Copyright",
+          "mpv/LICENSE*",
+          "mpv/source-manifest.json",
+          "mpv/mpv/fonts.conf",
+          "player-controls.lua"
         ]
       },
       {
@@ -71,7 +93,12 @@
       "createDesktopShortcut": true,
       "shortcutName": "VideoManager"
     },
-    "electronDist": "node_modules/electron/dist"
+    "electronDist": "node_modules/electron/dist",
+    "electronLanguages": [
+      "zh-CN",
+      "zh-TW",
+      "en-US"
+    ]
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",

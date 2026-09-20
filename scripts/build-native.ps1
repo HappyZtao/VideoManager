@@ -15,9 +15,13 @@ if ($LASTEXITCODE -ne 0) { throw 'vm-player-host compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'vm-fs compilation failed' }
 & $compiler -std=c++17 -O2 -static-libgcc -static-libstdc++ native\media\main.cpp -I "$($ffmpegFolder.FullName)\include" -L "$($ffmpegFolder.FullName)\lib" -o native\bin\vm-media.exe -lavformat -lavcodec -lavutil -lswscale
 if ($LASTEXITCODE -ne 0) { throw 'vm-media compilation failed' }
-Copy-Item -Path "$($ffmpegFolder.FullName)\bin\*.dll" -Destination native\bin
+# Runtime dependency closure of vm-media; avfilter and avdevice are not used.
+foreach ($runtimeDll in @('avcodec-62.dll','avformat-62.dll','avutil-60.dll','swscale-9.dll','swresample-6.dll')) {
+  Copy-Item -LiteralPath (Join-Path $ffmpegFolder.FullName ('bin\' + $runtimeDll)) -Destination native\bin
+}
 Copy-Item -LiteralPath native\vendor\manifest.json -Destination native\bin\ffmpeg-manifest.json
 Get-ChildItem -LiteralPath $ffmpegFolder.FullName -Filter 'LICENSE*' | Copy-Item -Destination native\bin
 $runtimeDir = Split-Path -Parent $compiler
 Get-ChildItem -LiteralPath $runtimeDir -Filter 'libwinpthread-1.dll' | Copy-Item -Destination native\bin
+Copy-Item -LiteralPath native/player-controls.lua -Destination native/bin/player-controls.lua
 Write-Output 'Native components built.'

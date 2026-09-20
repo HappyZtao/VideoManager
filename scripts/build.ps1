@@ -8,6 +8,7 @@ if (([version](& $runtimeNode -p 'process.versions.node')).Major -lt 22) {
 $env:PATH = (Split-Path -Parent $runtimeNode) + ';' + $env:PATH
 if (!(Test-Path -LiteralPath 'native/bin/mpv/mpv.exe')) { throw 'Run npm run fetch:mpv before building the installer.' }
 if (!(Test-Path -LiteralPath 'native/bin/vm-player-host.exe')) { throw 'Run npm run build:native before building the installer.' }
+Copy-Item -LiteralPath native/player-controls.lua -Destination native/bin/player-controls.lua
 $env:ELECTRON_CACHE = Join-Path $PWD '.cache\electron'
 $env:ELECTRON_BUILDER_CACHE = Join-Path $PWD '.cache\electron-builder'
 & $runtimeNode node_modules\typescript\bin\tsc --noEmit

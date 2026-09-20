@@ -8,5 +8,5 @@ export default defineConfig({
     build: { rollupOptions: { input: { index: resolve('apps/desktop/src/main/index.ts'), database: resolve('apps/desktop/src/workers/database.ts'), indexer: resolve('apps/desktop/src/workers/indexer.ts'), images: resolve('apps/desktop/src/workers/images.ts') } } }
   },
   preload: { plugins: [externalizeDepsPlugin()], build: { rollupOptions: { input: resolve('apps/desktop/src/preload/index.ts'), output: { format: 'cjs', entryFileNames: 'index.cjs' } } } },
-  renderer: { root: 'apps/desktop/src/renderer', plugins: [react()], build: { rollupOptions: { input: resolve('apps/desktop/src/renderer/index.html') } } }
+  renderer: { root: 'apps/desktop/src/renderer', plugins: [react()], build: { minify: 'esbuild', sourcemap: false, rollupOptions: { input: resolve('apps/desktop/src/renderer/index.html') } } }
 })
