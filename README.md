@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Windows 10 / 11" />
     <img src="https://img.shields.io/badge/architecture-x64-4C8BF5" alt="x64" />
-    <img src="https://img.shields.io/badge/version-0.7.2-18A058" alt="Version 0.7.2" />
+    <img src="https://img.shields.io/badge/version-0.8.1-18A058" alt="Version 0.8.1" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-2EA44F" alt="GNU GPL v3.0" /></a>
     <img src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white" alt="Electron 44" />
     <img src="https://img.shields.io/badge/privacy-local--first-7357C8" alt="Local first" />
@@ -35,6 +35,7 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
 - **多维搜索** — 支持按文件名、文件夹名、路径和标签搜索，并可组合类型、扩展名、大小、日期、时长及收藏状态筛选。
 - **内置查看器** — 连续浏览图片和视频，支持缩放、旋转、倍速播放、续播和全屏模式。
 - **自定义封面** — 文件夹和视频均可设置封面；支持推荐候选、外部图片以及视频精确选帧。
+- **视频刮削** — 按番号自动匹配标题、封面、发行日期、片商、系列、演员与标签；内置 JavBus、JavDB 等 7 个数据源并发查询，支持手动选优、批量刮削与封面自动应用。
 - **标签与收藏** — 管理信息独立存储，不修改原始媒体文件。
 - **安全文件操作** — 支持重命名、移动和移入系统回收站；跨盘移动会进行 SHA-256 校验。
 - **离线与重绑** — 磁盘离线时保留管理数据，迁移媒体后可重新绑定资源根目录。
@@ -81,6 +82,13 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
 - 右键媒体卡片可收藏、编辑标签、设置封面或定位文件。
 - 对视频选择 **设置封面**，可播放定位并精确选择某一帧。
 - 使用顶部搜索框查询文件名、文件夹名、路径或标签。
+
+### 视频刮削
+
+1. 在 **设置与插件 → 视频刮削** 中启用功能，按需调整数据源优先级与并发数（1–8）。
+2. 右键视频选择 **刮削元数据**，面板会并发查询所有启用数据源，选择最匹配的一条 **应用此结果**。
+3. 多选视频后点击工具栏刮削按钮可发起 **批量刮削**，进度与逐项结果见 **后台任务**。
+4. 刮削请求自动跟随 Windows 系统代理（含 PAC 分流）；封面下载成功后默认自动应用为视频封面（可关闭）。
 
 ---
 
@@ -134,7 +142,7 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
     ├── objects\                 # 手动封面对象
     ├── cache\                   # 可重新生成的缩略图缓存
     ├── temp\                    # 临时媒体处理文件
-    └── logs\                    # 本地诊断日志
+    └── logs\                    # 本地诊断日志（含刮削日志 scrape.log）
 ```
 
 如需手工备份应用数据，请先完全退出 VideoManager，再复制整个数据目录。不要只复制正在使用的 SQLite 主文件。
@@ -146,7 +154,7 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
 ```text
 videoManager/
 ├── apps/desktop/src/
-│   ├── main/                    # Electron 主进程、媒体与文件操作服务
+│   ├── main/                    # Electron 主进程、媒体、文件操作与刮削服务
 │   ├── preload/                 # 沙箱化、类型化 IPC 桥接
 │   ├── renderer/                # React 用户界面与查看器
 │   └── workers/                 # 索引、数据库和图像处理工作进程
