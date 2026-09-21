@@ -30,7 +30,7 @@ export function compileQuery(q: QuerySpec): { where: string; params: unknown[]; 
     if(q.searchFields.includes('name')){matches.push("(e.kind!='folder' AND instr(lower(e.name),?)>0)");params.push(word)}
     if(q.searchFields.includes('folder')){matches.push("((e.kind='folder' AND instr(lower(e.name),?)>0) OR (e.kind!='folder' AND instr(lower(CASE WHEN length(e.rel)>length(e.name) THEN substr(e.rel,1,length(e.rel)-length(e.name)-1) ELSE '' END),?)>0))");params.push(word,word)}
     if(q.searchFields.includes('tag')){matches.push('EXISTS(SELECT 1 FROM entry_tags search_tags WHERE search_tags.entryId=e.id AND instr(lower(search_tags.tag),?)>0)');params.push(word)}
-    clauses.push(matches.length?`(${matches.join(' OR ')})`:'0=1')
+    clauses.push(`(${matches.join(' OR ')})`)
   }
   if (q.kinds.length) { clauses.push(`e.kind IN (${q.kinds.map(()=>'?').join(',')})`); params.push(...q.kinds) }
   if (q.extensions.length) { clauses.push(`e.ext IN (${q.extensions.map(()=>'?').join(',')})`); params.push(...q.extensions.map(e=>e.toLowerCase().replace(/^\./,''))) }
@@ -39,8 +39,9 @@ export function compileQuery(q: QuerySpec): { where: string; params: unknown[]; 
   for (const [key, op, value] of [['size','>=',q.minSize], ['size','<=',q.maxSize], ['mtime','>=',q.after], ['mtime','<=',q.before], ['duration','>=',q.minDuration], ['duration','<=',q.maxDuration]] as const) {
     if (value !== null) { clauses.push(`e.${key}${op}?`); params.push(value) }
   }
-  const field = { name: 'sortKey', mtime: 'mtime', size: 'size', duration: 'duration' }[q.sort]
-  return { where: clauses.join(' AND '), params, order: `(e.kind='folder') DESC, e.${field} IS NULL ASC, e.${field} ${q.direction === 'desc' ? 'DESC' : 'ASC'}, e.id` }
+  const fields: Record<string, string> = { name: 'sortKey', mtime: 'mtime', size: 'size', duration: 'duration' }
+  const expr = `e.${fields[q.sort]}`
+  return { where: clauses.join(' AND '), params, order: `(e.kind='folder') DESC, ${expr} IS NULL ASC, ${expr} ${q.direction === 'desc' ? 'DESC' : 'ASC'}, e.id` }
 }
 export function parseRange(header: string | null, size: number): { start: number; end: number; partial: boolean } | null {
   if (!header) return { start: 0, end: size - 1, partial: false }

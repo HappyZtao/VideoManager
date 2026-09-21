@@ -30,6 +30,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entry_fts USING fts5(search,content='entries'
 CREATE TRIGGER IF NOT EXISTS entry_ai AFTER INSERT ON entries BEGIN INSERT INTO entry_fts(rowid,search) VALUES(new.rowid,new.search); END;
 CREATE TRIGGER IF NOT EXISTS entry_ad AFTER DELETE ON entries BEGIN INSERT INTO entry_fts(entry_fts,rowid,search) VALUES('delete',old.rowid,old.search); END;
 CREATE TRIGGER IF NOT EXISTS entry_au AFTER UPDATE OF search ON entries BEGIN INSERT INTO entry_fts(entry_fts,rowid,search) VALUES('delete',old.rowid,old.search); INSERT INTO entry_fts(rowid,search) VALUES(new.rowid,new.search); END;
+CREATE TABLE IF NOT EXISTS scrape_metadata(
+ entryId TEXT PRIMARY KEY,code TEXT NOT NULL DEFAULT '',title TEXT NOT NULL DEFAULT '',originalTitle TEXT NOT NULL DEFAULT '',
+ studio TEXT NOT NULL DEFAULT '',series TEXT NOT NULL DEFAULT '',releaseDate TEXT NOT NULL DEFAULT '',durationMin INTEGER NOT NULL DEFAULT 0,
+ actors TEXT NOT NULL DEFAULT '[]',tags TEXT NOT NULL DEFAULT '[]',description TEXT NOT NULL DEFAULT '',
+ coverUrl TEXT NOT NULL DEFAULT '',coverFile TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'auto',scrapedAt INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS scrape_status ON scrape_metadata(status);
 `
 type Row = Record<string, any>
 const searchText = (rel: string, name: string) => `${name}\n${rel}`.normalize('NFKC').toLowerCase()
@@ -45,7 +53,7 @@ export class LibraryDatabase {
     this.db.pragma('temp_store=MEMORY')
     this.db.pragma('cache_size=-32768')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 5) throw Error('数据库由更高版本创建，请升级应用')
+    if (version > 9) throw Error('数据库由更高版本创建，请升级应用')
     if (!readonly) {
       this.db.pragma('journal_mode=WAL'); this.db.pragma('synchronous=FULL')
       this.db.exec(schema)
@@ -53,7 +61,8 @@ export class LibraryDatabase {
       if(version<3){const columns=new Set((this.db.pragma('table_info(entries)') as Row[]).map(row=>row.name));if(!columns.has('coverQuality'))this.db.exec("ALTER TABLE entries ADD COLUMN coverQuality TEXT NOT NULL DEFAULT 'balanced'")}
       if(version<4)this.db.exec("UPDATE entries SET coverHash=NULL,coverSource=NULL,coverQuality='compact',coverRevision=coverRevision+1 WHERE coverMode='auto'; UPDATE entries SET coverQuality='compact' WHERE coverMode IS NULL")
       if(version<5)this.db.exec("UPDATE entries SET coverHash=NULL,coverSource=NULL,coverQuality='fast',coverRevision=coverRevision+1 WHERE coverMode='auto'; UPDATE entries SET coverQuality='fast' WHERE coverMode IS NULL")
-      this.db.pragma('user_version=5')
+      if(version<6)this.db.exec('CREATE TABLE IF NOT EXISTS scrape_metadata(entryId TEXT PRIMARY KEY,code TEXT NOT NULL DEFAULT \'\',title TEXT NOT NULL DEFAULT \'\',originalTitle TEXT NOT NULL DEFAULT \'\',studio TEXT NOT NULL DEFAULT \'\',series TEXT NOT NULL DEFAULT \'\',releaseDate TEXT NOT NULL DEFAULT \'\',durationMin INTEGER NOT NULL DEFAULT 0,actors TEXT NOT NULL DEFAULT \'[]\',tags TEXT NOT NULL DEFAULT \'[]\',description TEXT NOT NULL DEFAULT \'\',coverUrl TEXT NOT NULL DEFAULT \'\',coverFile TEXT NOT NULL DEFAULT \'\',provider TEXT NOT NULL DEFAULT \'\',status TEXT NOT NULL DEFAULT \'auto\',scrapedAt INTEGER NOT NULL DEFAULT 0)')
+      this.db.pragma('user_version=6')
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('libraryId',?)").run(randomUUID())
     }
   }
@@ -160,7 +169,7 @@ export class LibraryDatabase {
     const entries=this.selected(s); this.db.transaction(()=>{for(const e of entries){
       if(action==='favorite')this.db.prepare('UPDATE entries SET favorite=? WHERE id=?').run(value?1:0,e.id)
       else if(action==='tag-add')this.db.prepare('INSERT OR IGNORE INTO entry_tags VALUES(?,?)').run(e.id,value)
-      else this.db.prepare('DELETE FROM entry_tags WHERE entryId=? AND tag=?').run(e.id,value)
+      else if(action==='tag-remove')this.db.prepare('DELETE FROM entry_tags WHERE entryId=? AND tag=?').run(e.id,value)
     }})()
   }
   metadata(id: string,rev: number,data: Row) { this.db.prepare('UPDATE entries SET width=?,height=?,duration=?,codec=?,probeError=? WHERE id=? AND revision=?').run(data.width??null,data.height??null,data.duration??null,data.codec??null,data.error??null,id,rev) }
@@ -198,10 +207,38 @@ export class LibraryDatabase {
       for(const r of data.roots??[]) this.db.prepare("INSERT INTO roots(id,name,path,entryId,state,identity,active) VALUES(?,?,'',?,'offline','',1)").run(r.id,r.name,r.entryId)
       const columns=(this.db.pragma('table_info(entries)') as Row[]).map(r=>r.name as string)
       const put=this.db.prepare(`INSERT INTO entries(${columns.join(',')}) VALUES(${columns.map(c=>'@'+c).join(',')})`)
-      for(const e of data.entries??[]){if(!safeRelative(e.rel))throw Error('管理包包含非法相对路径');put.run({coverQuality:'fast',...e})}
+      for(const e of data.entries??[]){if(!safeRelative(e.rel))throw Error('管理包包含非法相对路径');/* watchedAt/watched 为旧版本（v7–v9）库的遗留列：新库无此列时多余键被忽略，旧库导入时提供默认值 */put.run({watchedAt:0,watched:0,coverQuality:'fast',...e})}
       for(const t of data.entry_tags??[])this.db.prepare('INSERT INTO entry_tags VALUES(?,?)').run(t.entryId,t.tag)
       for(const s of data.settings??[])this.db.prepare('INSERT INTO settings VALUES(?,?)').run(s.key,s.value)
       this.rebuildClosure();const check=this.db.pragma('foreign_key_check');if((check as unknown[]).length)throw Error('管理包关系校验失败')
     })()
+  }
+  scrapeGet(id: string) {
+    const row=this.db.prepare('SELECT * FROM scrape_metadata WHERE entryId=?').get(id) as Row | undefined
+    if(!row) return null
+    return {...row,actors:JSON.parse(row.actors) as string[],tags:JSON.parse(row.tags) as string[]}
+  }
+  scrapePut(id: string, data: Row) {
+    this.db.prepare(`INSERT INTO scrape_metadata(entryId,code,title,originalTitle,studio,series,releaseDate,durationMin,actors,tags,description,coverUrl,coverFile,provider,status,scrapedAt)
+      VALUES(@entryId,@code,@title,@originalTitle,@studio,@series,@releaseDate,@durationMin,@actors,@tags,@description,@coverUrl,@coverFile,@provider,@status,@scrapedAt)
+      ON CONFLICT(entryId) DO UPDATE SET code=@code,title=@title,originalTitle=@originalTitle,studio=@studio,series=@series,releaseDate=@releaseDate,durationMin=@durationMin,actors=@actors,tags=@tags,description=@description,coverUrl=@coverUrl,coverFile=@coverFile,provider=@provider,status=@status,scrapedAt=@scrapedAt`)
+      .run({...data,entryId:id,actors:JSON.stringify(data.actors??[]),tags:JSON.stringify(data.tags??[])})
+  }
+  scrapeDelete(id: string) { this.db.prepare('DELETE FROM scrape_metadata WHERE entryId=?').run(id) }
+  scrapeStats() {
+    const videos=this.db.prepare("SELECT count(*) FROM entries WHERE kind='video' AND state='present'").pluck().get() as number
+    const scraped=this.db.prepare("SELECT count(*) FROM scrape_metadata s JOIN entries e ON e.id=s.entryId WHERE e.state='present'").pluck().get() as number
+    const covers=this.db.prepare("SELECT count(*) FROM scrape_metadata s JOIN entries e ON e.id=s.entryId WHERE e.state='present' AND s.coverFile!=''").pluck().get() as number
+    return {videos,scraped,covers}
+  }
+  scrapeTargets(s: Selection, limit=5000): Entry[] {
+    if('ids' in s){
+      const get=this.db.prepare("SELECT e.*,r.state AS rootState FROM entries e JOIN roots r ON r.id=e.rootId WHERE e.id=? AND e.kind='video' AND e.state='present'")
+      const out: Entry[]=[]
+      for(const id of [...new Set(s.ids)]){const row=get.get(id) as Row|undefined;if(row)out.push({...row,tags:[]} as unknown as Entry)}
+      return out
+    }
+    const rows=this.db.prepare("SELECT e.*,r.state AS rootState FROM entries e JOIN roots r ON r.id=e.rootId JOIN selection_items si ON si.entryId=e.id WHERE si.snapshotId=? AND e.kind='video' AND e.state='present' ORDER BY si.ordinal LIMIT ?").all(s.snapshotId,limit) as Row[]
+    return rows.map(r=>({...r,tags:[]} as unknown as Entry))
   }
 }

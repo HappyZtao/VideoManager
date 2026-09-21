@@ -24,12 +24,18 @@ export const querySchema = z.object({
 export type QuerySpec = z.infer<typeof querySchema>
 export type QuerySession = { id: string; folders: number; media: number; total: number; complete: boolean }
 export type Page = { entries: Entry[]; offset: number; total: number }
-export type Task = { id: string; kind: string; name: string; state: string; discovered: number; processed: number; total?: number; failed: number; message: string; progress?: number; phase?: 'discover' | 'catalog' | 'covers' | 'finalizing'; coversProcessed?: number; coversTotal?: number; results?: { name: string; source: string; destination: string | null; state: string; message: string }[] }
+export type Task = { id: string; kind: string; name: string; state: string; discovered: number; processed: number; total?: number; failed: number; message: string; progress?: number; phase?: 'discover' | 'catalog' | 'covers' | 'finalizing'; coversProcessed?: number; coversTotal?: number; results?: { name: string; source: string; destination: string | null; state: string; message: string; entryId?: string }[] }
 export type Selection = { ids: string[] } | { snapshotId: string }
 export type PluginInfo = { id: string; name: string; description: string; group: string; slot: string; enabled: boolean; state: string; version: string; requires: string[]; config: Record<string, unknown>; schema: Record<string, unknown>; error?: string }
 export type Frame = { token: string; url: string; time: number; pts: string; ordinal: number; width: number; height: number; duration: number; generation: number }
 export type CoverSource = { handle: string; name: string; kind: Kind; duration: number; sourceId: string | null; playbackUrl: string | null }
 export type Plan = { id: string; kind: string; items: { id: string; name: string; source: string; destination: string | null; files: number; folders: number; bytes: number; conflict: boolean }[]; expires: number; message: string }
+export type ScrapeInfo = { provider: string; code: string; title: string; studio: string; series: string; releaseDate: string; durationMin: number; tags: string[]; actors: string[]; description: string; coverUrl: string; isUncensored: boolean | null }
+export type ScrapeMeta = ScrapeInfo & { entryId: string; status: 'auto' | 'manual'; scrapedAt: number; cover: string | null }
+export type ScrapeCandidate = { provider: string; label: string; ok: boolean; error?: string; info?: ScrapeInfo; cover: string | null }
+export type ScrapePreview = { entryId: string; codes: string[]; candidates: ScrapeCandidate[]; meta: ScrapeMeta | null }
+export type ScrapeProviderInfo = { id: string; label: string; description: string; kind: 'movie' | 'auxiliary' }
+export type ScrapeStats = { videos: number; scraped: number; covers: number }
 export type VMEvent = { topic: string; data?: unknown; sequence: number }
 export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
 
@@ -84,6 +90,15 @@ export interface VMApi {
   importLibrary(): Promise<string | null>
   switchLibrary(id: string): Promise<void>
   diagnostics(): Promise<string | null>
+  scrapeProviders(): Promise<ScrapeProviderInfo[]>
+  scrapeStats(): Promise<ScrapeStats>
+  scrapePreview(entryId: string): Promise<ScrapePreview>
+  scrapeSearch(entryId: string, provider: string): Promise<ScrapeCandidate>
+  scrapeApply(entryId: string, provider: string): Promise<ScrapeMeta>
+  scrapeMeta(entryId: string): Promise<ScrapeMeta | null>
+  scrapeSetCover(entryId: string): Promise<Entry>
+  scrapeClear(entryId: string): Promise<void>
+  scrapeRun(selection: Selection): Promise<Task>
   onEvent(callback: (event: VMEvent) => void): () => void
 }
 declare global { interface Window { vm: VMApi } }
@@ -106,5 +121,7 @@ export const ipcSchemas = {
   plan: z.tuple([selection, z.enum(['rename', 'move', 'trash']), id.nullable(), z.string().max(255).nullable(), z.enum(['skip','keep'])]),
   commit: z.tuple([id]), taskAction: z.tuple([id,z.enum(['pause','resume','cancel'])]), plugins: z.tuple([]),
   setPlugin: z.tuple([id,z.boolean(), z.record(z.string(),z.unknown())]), loadPlugin: z.tuple([]),
-  settings: z.tuple([z.record(z.string(), z.unknown())]), clearCache: z.tuple([]), pruneStorage: z.tuple([]), exportLibrary: z.tuple([]), importLibrary: z.tuple([]), switchLibrary: z.tuple([id]), diagnostics: z.tuple([])
+  settings: z.tuple([z.record(z.string(), z.unknown())]), clearCache: z.tuple([]), pruneStorage: z.tuple([]), exportLibrary: z.tuple([]), importLibrary: z.tuple([]), switchLibrary: z.tuple([id]), diagnostics: z.tuple([]),
+  scrapeProviders: z.tuple([]), scrapeStats: z.tuple([]), scrapePreview: z.tuple([id]), scrapeSearch: z.tuple([id, z.string().min(1).max(40)]),
+  scrapeApply: z.tuple([id, z.string().min(1).max(40)]), scrapeMeta: z.tuple([id]), scrapeSetCover: z.tuple([id]), scrapeClear: z.tuple([id]), scrapeRun: z.tuple([selection])
 }

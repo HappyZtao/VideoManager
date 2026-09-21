@@ -1,0 +1,80 @@
+{
+  "appId": "local.videomanager.desktop",
+  "productName": "VideoManager",
+  "directories": {
+    "output": "release/v0.8.1",
+    "buildResources": "build"
+  },
+  "files": [
+    "out/**/*",
+    "package.json",
+    "!node_modules/better-sqlite3/prebuilds/{linux*,darwin*,win32-arm64*}",
+    "!node_modules/better-sqlite3/{deps,src}/**",
+    "!node_modules/better-sqlite3/binding.gyp",
+    "!node_modules/sharp/{src,install}/**",
+    "!node_modules/**/{test,tests,__tests__,example,examples,benchmark,benchmarks}/**",
+    "!node_modules/**/*.map",
+    "!node_modules/**/*.d.ts",
+    "!out/**/*.map"
+  ],
+  "asarUnpack": [
+    "**/*.node"
+  ],
+  "extraResources": [
+    {
+      "from": "native/bin",
+      "to": "native",
+      "filter": [
+        "vm-fs.exe",
+        "vm-media.exe",
+        "vm-player-host.exe",
+        "avcodec-62.dll",
+        "avformat-62.dll",
+        "avutil-60.dll",
+        "swscale-9.dll",
+        "swresample-6.dll",
+        "libwinpthread-1.dll",
+        "LICENSE*",
+        "ffmpeg-manifest.json",
+        "mpv/mpv.exe",
+        "mpv/*.dll",
+        "mpv/Copyright",
+        "mpv/LICENSE*",
+        "mpv/source-manifest.json",
+        "mpv/mpv/fonts.conf",
+        "player-controls.lua"
+      ]
+    },
+    {
+      "from": "docs/THIRD-PARTY-NOTICES.md",
+      "to": "THIRD-PARTY-NOTICES.md"
+    },
+    {
+      "from": "LICENSE",
+      "to": "LICENSE.txt"
+    }
+  ],
+  "npmRebuild": false,
+  "win": {
+    "target": [
+      "nsis"
+    ],
+    "artifactName": "VideoManager-${version}-Windows-x64-Setup.${ext}",
+    "icon": "build/icon.ico",
+    "signExecutable": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "shortcutName": "VideoManager"
+  },
+  "electronDist": "node_modules/electron/dist",
+  "electronLanguages": [
+    "zh-CN",
+    "zh-TW",
+    "en-US"
+  ]
+}

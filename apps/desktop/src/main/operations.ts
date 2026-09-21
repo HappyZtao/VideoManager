@@ -29,8 +29,8 @@ export class OperationService {
   }
   if(destinationDir){const probe=path.join(destinationDir,'.vm-write-check-'+randomUUID());const handle=await fs.open(probe,'wx');await handle.close();await fs.unlink(probe);const available=await fs.statfs(destinationDir);const targetIdentity=(await this.native.call('stat',{path:destinationDir})).identity.split(':')[0];const required=items.filter(item=>!item.conflict&&item.entry.identity.split(':')[0]!==targetIdentity).reduce((bytes,item)=>bytes+item.tree.reduce((total,file)=>total+(file.directory?0:file.size),0),0);if(required>available.bavail*available.bsize)throw Error('目标磁盘可用空间不足')}
   const id=randomUUID();const plan:InternalPlan={id,kind,items,created:Date.now(),conflict,hash:''};plan.hash=createHash('sha256').update(JSON.stringify(plan)).digest('hex');this.plans.set(id,plan)
-  return {id,kind,expires:plan.created+300000,message:'整目录操作包含隐藏文件和非媒体文件；同名目标不会被覆盖。',items:items.map(i=>({id:i.entry.id,name:i.entry.name,source:i.source,destination:i.destination,files:i.tree.filter(t=>!t.directory).length,folders:i.tree.filter(t=>t.directory).length,bytes:i.tree.reduce((s,t)=>s+(t.directory?0:t.size),0),conflict:i.conflict}))}
- }
+ return {id,kind,expires:plan.created+300000,message:'整目录操作包含隐藏文件和非媒体文件；同名目标不会被覆盖。',items:items.map(i=>({id:i.entry.id,name:i.entry.name,source:i.source,destination:i.destination,files:i.tree.filter(t=>!t.directory).length,folders:i.tree.filter(t=>t.directory).length,bytes:i.tree.reduce((s,t)=>s+(t.directory?0:t.size),0),conflict:i.conflict}))}
+}
  async commit(id:string){const existing=this.tasks.get(id);if(existing)return existing;const plan=this.plans.get(id);if(!plan||Date.now()-plan.created>300000)throw Error('操作计划已过期，请重新确认');if(this.busy)throw Error('另一个文件操作正在执行');this.busy=true
   const task:Task={id,kind:'operation',name:{rename:'重命名',move:'移动文件',trash:'移入回收站'}[plan.kind]??'文件操作',state:'running',discovered:plan.items.length,processed:0,failed:0,message:'正在重新检查文件',results:[]};this.tasks.set(id,task);this.emit({...task});void this.run(plan,task);return task
  }

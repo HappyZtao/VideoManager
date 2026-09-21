@@ -148,6 +148,57 @@ button:not(:disabled):active{transform:translateY(1px)}
 .external-player-state{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;color:#e8edf4;padding:40px}.external-player-state h3,.external-player-state p{margin:0}
 @media(max-width:1100px){.player-options{gap:8px}.player-option{padding:12px}}
 
+/* ---- Video metadata scraping (设置 · 刮削面板 · 结果预览) ---- */
+.scrape-settings .setting-row{padding-block:14px}
+.scrape-provider-list{display:flex;flex-direction:column;gap:8px}
+.scrape-provider-row{display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:10px;padding:10px 14px;background:var(--surface)}
+.scrape-provider-row.enabled{border-color:var(--accent-dim);background:color-mix(in srgb,var(--surface) 92%,var(--accent) 8%)}
+.scrape-provider-row>svg{color:var(--secondary);flex-shrink:0}
+.scrape-provider-row.enabled>svg{color:var(--accent)}
+.scrape-provider-info{min-width:0;flex:1}
+.scrape-provider-info strong{font-size:12px;font-weight:600}
+.scrape-provider-info small{display:block;font-size:10px;color:var(--secondary);margin-top:2px}
+.scrape-provider-order{display:flex;gap:2px}
+.scrape-entry{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--secondary);padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--raised);overflow:hidden}
+.scrape-entry>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scrape-entry>svg{color:var(--accent);flex-shrink:0}
+.scrape-codes{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
+.scrape-codes .badge{margin-left:0;font-size:11px}
+.scrape-meta{display:flex;gap:14px;border:1px solid var(--accent-dim);background:var(--accent-wash);border-radius:10px;padding:12px;margin-top:12px}
+.scrape-meta.manual{border-color:var(--border);background:var(--raised)}
+.scrape-meta-cover{width:96px;flex-shrink:0;aspect-ratio:3/4;border-radius:7px;overflow:hidden;background:var(--thumbnail);border:1px solid var(--border)}
+.scrape-meta-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.scrape-meta-cover .placeholder{height:100%}
+.scrape-meta-cover .placeholder svg{width:22px}
+.scrape-meta-body{min-width:0;flex:1}
+.scrape-meta-title{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.scrape-meta-title strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.scrape-meta-title .badge{flex-shrink:0}
+.scrape-meta-line{font-size:11px;color:var(--secondary);margin-top:5px}
+.scrape-meta-actors{font-size:11px;color:var(--secondary);margin-top:3px}
+.scrape-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;align-items:center}
+.scrape-tags>span{font-size:10px;color:var(--accent);background:var(--accent-wash);border:1px solid var(--accent-dim);border-radius:4px;padding:1px 6px}
+.scrape-tags>small{color:var(--muted);font-size:10px}
+.scrape-meta .button-row{margin-top:9px}
+.scrape-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.scrape-card{border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.scrape-card>header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.scrape-card>header strong{font-size:12px}
+.scrape-card>header .badge{margin-left:0}
+.scrape-card>header .badge.failed{color:var(--danger);border-color:var(--danger-muted);display:inline-flex;align-items:center;gap:4px}
+.scrape-card.failed{background:var(--raised)}
+.scrape-card-body{display:flex;gap:12px;margin-top:10px}
+.scrape-card-cover{width:72px;flex-shrink:0;aspect-ratio:3/4;border-radius:7px;overflow:hidden;background:var(--thumbnail);border:1px solid var(--border)}
+.scrape-card-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.scrape-card-cover .placeholder{height:100%}
+.scrape-card-cover .placeholder svg{width:20px}
+.scrape-card-info{min-width:0;flex:1}
+.scrape-card-info strong{display:block;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.scrape-card-actors{font-size:10px;color:var(--secondary);margin-top:3px}
+.scrape-card .button-row{margin-top:8px}
+.scrape-card .primary{min-height:30px;font-size:12px;padding:5px 12px}
+.scrape-modal-footer-note{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}
+
 /* One player dialog, with a native video surface and shared visual controls. */
 .modal.wide:has(.mpv-viewer){display:flex;flex-direction:column;overflow:hidden}
 .modal:has(.mpv-viewer)>header{flex-shrink:0}

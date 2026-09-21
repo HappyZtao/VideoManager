@@ -1,6 +1,6 @@
 {
   "name": "videomanager",
-  "version": "0.7.2",
+  "version": "0.8.1",
   "description": "离线本地图片与视频管理工作台",
   "author": "VideoManager",
   "license": "GPL-3.0-only",
@@ -124,11 +124,13 @@
     "@tanstack/react-virtual": "3.14.13",
     "ajv": "8.20.0",
     "better-sqlite3": "13.0.3",
+    "cheerio": "1.2.0",
     "cordis": "4.0.0-rc.10",
     "lucide-react": "1.47.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "sharp": "0.35.4",
+    "undici": "7.29.1",
     "yauzl": "3.4.0",
     "yazl": "3.3.1",
     "zod": "4.6.5",
@@ -136,5 +138,10 @@
   },
   "engines": {
     "node": ">=22.12.0"
+  },
+  "overrides": {
+    "source-map-support": {
+      "source-map": "0.6.1"
+    }
   }
 }
