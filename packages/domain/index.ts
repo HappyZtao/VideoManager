@@ -36,6 +36,7 @@ export function compileQuery(q: QuerySpec): { where: string; params: unknown[]; 
   if (q.extensions.length) { clauses.push(`e.ext IN (${q.extensions.map(()=>'?').join(',')})`); params.push(...q.extensions.map(e=>e.toLowerCase().replace(/^\./,''))) }
   if (q.favorite) clauses.push('e.favorite=1')
   for (const tag of q.tags) { clauses.push('EXISTS(SELECT 1 FROM entry_tags t WHERE t.entryId=e.id AND t.tag=?)'); params.push(tag) }
+  if (q.actress) { clauses.push('EXISTS(SELECT 1 FROM entry_actors fa JOIN actresses faa ON faa.id=fa.actressId WHERE fa.entryId=e.id AND faa.name=?)'); params.push(q.actress) }
   for (const [key, op, value] of [['size','>=',q.minSize], ['size','<=',q.maxSize], ['mtime','>=',q.after], ['mtime','<=',q.before], ['duration','>=',q.minDuration], ['duration','<=',q.maxDuration]] as const) {
     if (value !== null) { clauses.push(`e.${key}${op}?`); params.push(value) }
   }

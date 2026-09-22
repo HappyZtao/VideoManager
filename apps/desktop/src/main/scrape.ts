@@ -7,6 +7,7 @@ import type { WorkerClient } from './worker'
 import type { MediaService } from './media'
 import { extractCodesFromName } from './scrape/parse'
 import { providers, providerById } from './scrape/providers'
+import { lookupActressProfile, lookupActressProfileByCode } from './scrape/actress'
 import { ScrapeNotFound, downloadImage } from './scrape/http'
 
 const LOG_NAME = 'scrape.log'
@@ -17,6 +18,7 @@ type TaskControl = { cancel: boolean }
 
 export class ScrapeService {
   private controls = new Map<string, TaskControl>()
+  private enrichBusy = false
   constructor(private dataDir: string, private db: WorkerClient, private media: MediaService, private emit: (task: Task) => void, private changed: () => void, private onEntryChanged?: (entry: Entry) => void) {}
 
   private async settings(): Promise<Record<string, unknown>> { return this.db.call<Record<string, unknown>>('settings') }
@@ -154,6 +156,8 @@ export class ScrapeService {
       try {
         const entry = await this.media.saveExternalCover(entryId, coverFile)
         this.onEntryChanged?.(entry)
+        // 所在文件夹的封面同步替换为刮削封面（与手动设置封面后的祖先传播一致）。
+        for (const ancestor of await this.media.refreshAncestorCovers(entryId)) this.onEntryChanged?.(ancestor)
       } catch (error) {
         await this.log('autocover-failed', entryId, `${coverFile} → ${error instanceof Error ? error.message : error}`)
       }
@@ -321,6 +325,62 @@ ${tags.map(tag => `  <genre>${escape(tag)}</genre>\n  <tag>${escape(tag)}</tag>`
       }
     }
     return { written, skipped }
+  }
+
+  // 女优资料补全：为缺少资料（profileAt=0）且有作品的女优后台查询。
+  // 双数据源（参考 JavBoss）：先按名字查 MinnanoAV，未命中再按已刮削番号查 JavDatabase。
+  // 网络失败保留 profileAt=0 以便下次重试；两个源都确认无资料则标记跳过，避免反复查询。
+  async enrichActresses(): Promise<{ started: boolean; pending: number }> {
+    const targets = await this.db.call<{ id: string; name: string }[]>('actressMissingProfiles', 100)
+    if (!targets.length) return { started: false, pending: 0 }
+    if (this.enrichBusy) return { started: false, pending: targets.length }
+    this.enrichBusy = true
+    void this.enrichLoop(targets)
+    return { started: true, pending: targets.length }
+  }
+
+  private async enrichLoop(targets: { id: string; name: string }[]): Promise<void> {
+    let updated = 0
+    try {
+      for (const target of targets) {
+        let profile: Awaited<ReturnType<typeof lookupActressProfile>> = null
+        let networkError: unknown = null
+        try {
+          profile = await lookupActressProfile(target.name)
+        } catch (error) {
+          networkError = error
+        }
+        if (!profile) {
+          const code = await this.db.call<string | null>('actressSampleCode', target.id).catch(() => null)
+          if (code) {
+            try {
+              profile = await lookupActressProfileByCode(code)
+            } catch (error) {
+              networkError = networkError ?? error
+            }
+          }
+        }
+        try {
+          if (profile) {
+            await this.db.call('actressProfilePatch', target.id, { ...profile, profileAt: Date.now() })
+            updated++
+            await this.log('actress-profile', target.name, `已补全资料 · ${profile.birthDate || '生日未知'} · ${profile.source}`)
+          } else if (networkError) {
+            // 网络异常不标记，下次打开女优页时重试。
+            await this.log('actress-profile-failed', target.name, networkError)
+          } else {
+            await this.db.call('actressProfilePatch', target.id, { profileAt: Date.now(), profileSource: 'miss' })
+            await this.log('actress-profile', target.name, '未在数据源中找到该女优')
+          }
+        } catch (error) {
+          await this.log('actress-profile-failed', target.name, error)
+        }
+        await new Promise(resolve => setTimeout(resolve, 300))
+      }
+    } finally {
+      this.enrichBusy = false
+      if (updated) this.changed()
+    }
   }
 
   // 批量刮削：按数据源优先级逐个尝试，首个成功结果自动应用。
