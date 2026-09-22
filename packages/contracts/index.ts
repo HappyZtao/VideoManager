@@ -16,6 +16,7 @@ export const querySchema = z.object({
   searchFields: z.array(z.enum(['name','folder','tag'])).max(3).default(['name','folder','tag']),
   kinds: z.array(z.enum(['image', 'video'])).max(2).default([]), extensions: z.array(z.string().max(20)).max(30).default([]),
   tags: z.array(z.string().max(64)).max(30).default([]), favorite: z.boolean().default(false),
+  actress: z.string().max(64).default(''),
   sort: z.enum(['name', 'mtime', 'size', 'duration']).default('name'), direction: z.enum(['asc', 'desc']).default('asc'),
   minSize: z.number().nonnegative().nullable().default(null), maxSize: z.number().nonnegative().nullable().default(null),
   after: z.number().nonnegative().nullable().default(null), before: z.number().nonnegative().nullable().default(null),
@@ -36,8 +37,12 @@ export type ScrapeCandidate = { provider: string; label: string; ok: boolean; er
 export type ScrapePreview = { entryId: string; codes: string[]; candidates: ScrapeCandidate[]; meta: ScrapeMeta | null }
 export type ScrapeProviderInfo = { id: string; label: string; description: string; kind: 'movie' | 'auxiliary' }
 export type ScrapeStats = { videos: number; scraped: number; covers: number }
+export type ActressSort = 'work-desc' | 'work-asc' | 'name-asc' | 'age-asc' | 'age-desc' | 'recent-desc'
+export type Actress = { id: string; name: string; birthDate: string; height: number; bust: number; waist: number; hips: number; cup: string; aliases: string[]; profileSource: string; profileAt: number; workCount: number; recentAt: number | null; coverEntryId: string | null }
+export type ActressPage = { items: Actress[]; total: number }
+export type ActressEnrichState = { started: boolean; pending: number }
 export type VMEvent = { topic: string; data?: unknown; sequence: number }
-export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
+export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; actressCount: number; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
 
 export type VideoPlayer='chromium'|'mpv'|'system'
 export const mpvBoundsSchema=z.object({x:z.number().int().min(0).max(32768),y:z.number().int().min(0).max(32768),width:z.number().int().min(0).max(32768),height:z.number().int().min(0).max(32768)})
@@ -99,6 +104,8 @@ export interface VMApi {
   scrapeSetCover(entryId: string): Promise<Entry>
   scrapeClear(entryId: string): Promise<void>
   scrapeRun(selection: Selection): Promise<Task>
+  actresses(sort: ActressSort, offset: number, limit: number): Promise<ActressPage>
+  actressEnrich(): Promise<ActressEnrichState>
   onEvent(callback: (event: VMEvent) => void): () => void
 }
 declare global { interface Window { vm: VMApi } }
@@ -123,5 +130,6 @@ export const ipcSchemas = {
   setPlugin: z.tuple([id,z.boolean(), z.record(z.string(),z.unknown())]), loadPlugin: z.tuple([]),
   settings: z.tuple([z.record(z.string(), z.unknown())]), clearCache: z.tuple([]), pruneStorage: z.tuple([]), exportLibrary: z.tuple([]), importLibrary: z.tuple([]), switchLibrary: z.tuple([id]), diagnostics: z.tuple([]),
   scrapeProviders: z.tuple([]), scrapeStats: z.tuple([]), scrapePreview: z.tuple([id]), scrapeSearch: z.tuple([id, z.string().min(1).max(40)]),
-  scrapeApply: z.tuple([id, z.string().min(1).max(40)]), scrapeMeta: z.tuple([id]), scrapeSetCover: z.tuple([id]), scrapeClear: z.tuple([id]), scrapeRun: z.tuple([selection])
+  scrapeApply: z.tuple([id, z.string().min(1).max(40)]), scrapeMeta: z.tuple([id]), scrapeSetCover: z.tuple([id]), scrapeClear: z.tuple([id]), scrapeRun: z.tuple([selection]),
+  actresses: z.tuple([z.enum(['work-desc','work-asc','name-asc','age-asc','age-desc','recent-desc']), z.number().int().nonnegative().max(1e6), z.number().int().min(1).max(200)]), actressEnrich: z.tuple([])
 }
