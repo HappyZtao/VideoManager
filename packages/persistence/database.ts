@@ -39,9 +39,10 @@ CREATE TABLE IF NOT EXISTS scrape_metadata(
 );
 CREATE INDEX IF NOT EXISTS scrape_status ON scrape_metadata(status);
 CREATE TABLE IF NOT EXISTS actresses(
- id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,birthDate TEXT NOT NULL DEFAULT '',height INTEGER NOT NULL DEFAULT 0,
+ id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,japaneseName TEXT NOT NULL DEFAULT '',chineseName TEXT NOT NULL DEFAULT '',
+ birthDate TEXT NOT NULL DEFAULT '',height INTEGER NOT NULL DEFAULT 0,
  bust INTEGER NOT NULL DEFAULT 0,waist INTEGER NOT NULL DEFAULT 0,hips INTEGER NOT NULL DEFAULT 0,cup TEXT NOT NULL DEFAULT '',
- aliases TEXT NOT NULL DEFAULT '[]',profileSource TEXT NOT NULL DEFAULT '',profileAt INTEGER NOT NULL DEFAULT 0,createdAt INTEGER NOT NULL DEFAULT 0
+ aliases TEXT NOT NULL DEFAULT '[]',coverEntryId TEXT NOT NULL DEFAULT '',profileSource TEXT NOT NULL DEFAULT '',profileAt INTEGER NOT NULL DEFAULT 0,createdAt INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS entry_actors(entryId TEXT NOT NULL,actressId TEXT NOT NULL,PRIMARY KEY(entryId,actressId));
 CREATE INDEX IF NOT EXISTS actress_entries ON entry_actors(actressId,entryId);
@@ -76,12 +77,23 @@ export class LibraryDatabase {
         this.db.exec("INSERT OR IGNORE INTO entry_tags(entryId,tag) SELECT s.entryId,TRIM(j.value) FROM scrape_metadata s,json_each(s.tags) j WHERE json_valid(s.tags) AND s.tags NOT IN ('','[]') AND TRIM(j.value)<>''")
         this.rebuildActresses()
       }
-      this.db.pragma('user_version=7')
+      if(version<8){
+        // 演员资料扩展（日文名/中文名）与手动封面选择。
+        const columns=new Set((this.db.pragma('table_info(actresses)') as Row[]).map(row=>row.name))
+        if(!columns.has('japaneseName'))this.db.exec("ALTER TABLE actresses ADD COLUMN japaneseName TEXT NOT NULL DEFAULT ''")
+        if(!columns.has('chineseName'))this.db.exec("ALTER TABLE actresses ADD COLUMN chineseName TEXT NOT NULL DEFAULT ''")
+        if(!columns.has('coverEntryId'))this.db.exec("ALTER TABLE actresses ADD COLUMN coverEntryId TEXT NOT NULL DEFAULT ''")
+      }
+      if(version<9){
+        // 资料补全升级为三源聚合（新增 JavModel 中文名/罗马名），重置补全时间触发一次性重新聚合。
+        this.db.exec('UPDATE actresses SET profileAt=0')
+      }
+      this.db.pragma('user_version=9')
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('libraryId',?)").run(randomUUID())
     }
   }
   close() { this.db.close() }
-  info() { return { libraryId: this.db.prepare("SELECT value FROM meta WHERE key='libraryId'").pluck().get(), roots: this.roots(), settings: this.settings(), tags: this.tags(), actressCount: this.actressCount() } }
+  info() { return { libraryId: this.db.prepare("SELECT value FROM meta WHERE key='libraryId'").pluck().get(), roots: this.roots(), settings: this.settings(), tags: this.tags(), actressCount: this.actressCount(), movieCount: this.movieCount() } }
   roots() { return this.db.prepare('SELECT * FROM roots WHERE active=1').all() }
   root(id: string) { return this.db.prepare('SELECT * FROM roots WHERE id=?').get(id) as Row }
   allRoots() { return this.db.prepare('SELECT * FROM roots').all() }
@@ -226,7 +238,7 @@ export class LibraryDatabase {
       for(const s of data.settings??[])this.db.prepare('INSERT INTO settings VALUES(?,?)').run(s.key,s.value)
       for(const s of data.scrape_metadata??[])this.db.prepare(`INSERT OR REPLACE INTO scrape_metadata(entryId,code,title,originalTitle,studio,series,releaseDate,durationMin,actors,tags,description,coverUrl,coverFile,provider,status,scrapedAt)
         VALUES(@entryId,@code,@title,@originalTitle,@studio,@series,@releaseDate,@durationMin,@actors,@tags,@description,@coverUrl,@coverFile,@provider,@status,@scrapedAt)`).run({...s,entryId:String(s.entryId??'')})
-      for(const a of data.actresses??[])this.db.prepare('INSERT OR REPLACE INTO actresses(id,name,birthDate,height,bust,waist,hips,cup,aliases,profileSource,profileAt,createdAt) VALUES(@id,@name,@birthDate,@height,@bust,@waist,@hips,@cup,@aliases,@profileSource,@profileAt,@createdAt)').run({birthDate:'',height:0,bust:0,waist:0,hips:0,cup:'',aliases:'[]',profileSource:'',profileAt:0,createdAt:0,...a,id:String(a.id),name:String(a.name)})
+      for(const a of data.actresses??[])this.db.prepare('INSERT OR REPLACE INTO actresses(id,name,japaneseName,chineseName,birthDate,height,bust,waist,hips,cup,aliases,coverEntryId,profileSource,profileAt,createdAt) VALUES(@id,@name,@japaneseName,@chineseName,@birthDate,@height,@bust,@waist,@hips,@cup,@aliases,@coverEntryId,@profileSource,@profileAt,@createdAt)').run({japaneseName:'',chineseName:'',birthDate:'',height:0,bust:0,waist:0,hips:0,cup:'',aliases:'[]',coverEntryId:'',profileSource:'',profileAt:0,createdAt:0,...a,id:String(a.id),name:String(a.name)})
       this.rebuildActresses()
       this.rebuildClosure();const check=this.db.pragma('foreign_key_check');if((check as unknown[]).length)throw Error('管理包关系校验失败')
     })()
@@ -286,11 +298,13 @@ export class LibraryDatabase {
       }
     })()
   }
-  // 女优聚合列表：作品数仅统计在线资源目录中的现存视频；封面取有刮削封面且最新发行的作品。
+  // 女优聚合列表：作品数仅统计在线资源目录中的现存视频；封面优先手动选择，
+  // 未选择时取有刮削封面且最新发行的作品。
   actressList(sort: string, offset: number, limit: number): ActressPage {
     const workCount = "(SELECT count(*) FROM entry_actors wea JOIN entries we ON we.id=wea.entryId JOIN roots wr ON wr.id=we.rootId WHERE wea.actressId=a.id AND we.state='present' AND we.kind='video' AND wr.active=1)"
     const recentAt = "(SELECT max(we.mtime) FROM entry_actors wea JOIN entries we ON we.id=wea.entryId JOIN roots wr ON wr.id=we.rootId WHERE wea.actressId=a.id AND we.state='present' AND wr.active=1)"
-    const coverEntry = "(SELECT wea.entryId FROM entry_actors wea JOIN entries we ON we.id=wea.entryId JOIN roots wr ON wr.id=we.rootId LEFT JOIN scrape_metadata sm ON sm.entryId=we.id WHERE wea.actressId=a.id AND we.state='present' AND wr.active=1 ORDER BY (sm.coverFile!='') DESC,sm.releaseDate DESC,we.mtime DESC LIMIT 1)"
+    const autoCover = "(SELECT wea.entryId FROM entry_actors wea JOIN entries we ON we.id=wea.entryId JOIN roots wr ON wr.id=we.rootId LEFT JOIN scrape_metadata sm ON sm.entryId=we.id WHERE wea.actressId=a.id AND we.state='present' AND wr.active=1 ORDER BY (sm.coverFile!='') DESC,sm.releaseDate DESC,we.mtime DESC LIMIT 1)"
+    const coverEntry = `(CASE WHEN a.coverEntryId<>'' AND EXISTS(SELECT 1 FROM entries ce JOIN roots cr ON cr.id=ce.rootId WHERE ce.id=a.coverEntryId AND ce.state='present' AND cr.active=1) THEN a.coverEntryId ELSE ${autoCover} END)`
     const orders: Record<string, string> = {
       'work-desc': 'workCount DESC, name COLLATE NOCASE ASC',
       'work-asc': 'workCount ASC, name COLLATE NOCASE ASC',
@@ -299,17 +313,68 @@ export class LibraryDatabase {
       'age-desc': "CASE WHEN birthDate='' THEN 1 ELSE 0 END, birthDate ASC, name COLLATE NOCASE ASC",
       'recent-desc': 'CASE WHEN recentAt IS NULL THEN 1 ELSE 0 END, recentAt DESC, name COLLATE NOCASE ASC'
     }
-    const select = `SELECT a.id,a.name,a.birthDate,a.height,a.bust,a.waist,a.hips,a.cup,a.aliases,a.profileSource,a.profileAt,${workCount} AS workCount,${recentAt} AS recentAt,${coverEntry} AS coverEntryId FROM actresses a`
+    const select = `SELECT a.id,a.name,a.japaneseName,a.chineseName,a.birthDate,a.height,a.bust,a.waist,a.hips,a.cup,a.aliases,a.profileSource,a.profileAt,${workCount} AS workCount,${recentAt} AS recentAt,${coverEntry} AS coverEntryId FROM actresses a`
     const rows = this.db.prepare(`SELECT * FROM (${select}) WHERE workCount>0 ORDER BY ${orders[sort] ?? orders['work-desc']!} LIMIT ? OFFSET ?`).all(limit, offset) as Row[]
     const total = this.db.prepare(`SELECT count(*) FROM (SELECT ${workCount} AS workCount FROM actresses a) WHERE workCount>0`).pluck().get() as number
     const items = rows.map(row => ({
-      id: String(row.id), name: String(row.name), birthDate: String(row.birthDate ?? ''),
+      id: String(row.id), name: String(row.name), japaneseName: String(row.japaneseName ?? ''), chineseName: String(row.chineseName ?? ''),
+      birthDate: String(row.birthDate ?? ''),
       height: Number(row.height) || 0, bust: Number(row.bust) || 0, waist: Number(row.waist) || 0, hips: Number(row.hips) || 0,
       cup: String(row.cup ?? ''), aliases: parseStringArray(row.aliases), profileSource: String(row.profileSource ?? ''), profileAt: Number(row.profileAt) || 0,
       workCount: Number(row.workCount) || 0, recentAt: row.recentAt == null ? null : Number(row.recentAt),
       coverEntryId: row.coverEntryId == null ? null : String(row.coverEntryId)
     }))
     return { total, items }
+  }
+  // 编辑演员资料：名字冲突时拒绝；数字字段复用补全的钳制规则。
+  actressUpdate(id: string, data: Row) {
+    const name = String(data.name ?? '').trim().slice(0, 64)
+    if (!name) throw Error('演员名字不能为空')
+    if (this.db.prepare('SELECT id FROM actresses WHERE name=? AND id!=?').get(name, id)) throw Error(`已存在同名演员：${name}`)
+    this.db.prepare(`UPDATE actresses SET name=@name,japaneseName=@japaneseName,chineseName=@chineseName,birthDate=@birthDate,height=@height,bust=@bust,waist=@waist,hips=@hips,cup=@cup WHERE id=@id`)
+      .run({
+        id, name,
+        japaneseName: String(data.japaneseName ?? '').trim().slice(0, 64), chineseName: String(data.chineseName ?? '').trim().slice(0, 64),
+        birthDate: String(data.birthDate ?? '').trim().slice(0, 10),
+        height: clampCount(data.height), bust: clampCount(data.bust), waist: clampCount(data.waist), hips: clampCount(data.hips),
+        cup: String(data.cup ?? '').trim().slice(0, 4).toUpperCase()
+      })
+  }
+  // 演员封面候选：关联的现存作品，有刮削封面者优先，按发行日期倒序。
+  actressCoverOptions(id: string, limit: number) {
+    return this.db.prepare(`SELECT e.id AS entryId,sm.code,sm.title,sm.releaseDate,(sm.coverFile!='') AS hasCover,e.favorite
+      FROM entry_actors ea JOIN entries e ON e.id=ea.entryId JOIN roots r ON r.id=e.rootId LEFT JOIN scrape_metadata sm ON sm.entryId=e.id
+      WHERE ea.actressId=? AND e.state='present' AND r.active=1
+      ORDER BY (sm.coverFile!='') DESC,sm.releaseDate DESC,e.mtime DESC LIMIT ?`).all(id, limit) as Row[]
+  }
+  // 手动指定演员封面（取某部作品的封面作为头像）。
+  actressSetCover(id: string, entryId: string) {
+    if (!this.db.prepare('SELECT 1 FROM entry_actors WHERE actressId=? AND entryId=?').get(id, entryId)) throw Error('所选影片不属于该演员')
+    if (!this.db.prepare("SELECT 1 FROM entries WHERE id=? AND state='present'").get(entryId)) throw Error('所选影片不可用')
+    this.db.prepare('UPDATE actresses SET coverEntryId=? WHERE id=?').run(entryId, id)
+  }
+  // 电影列表：资源库中已刮削的视频，按数据源粒度排序分页。
+  javMovieList(sort: string, offset: number, limit: number) {
+    const where = "FROM scrape_metadata sm JOIN entries e ON e.id=sm.entryId JOIN roots r ON r.id=e.rootId WHERE e.state='present' AND r.active=1"
+    const orders: Record<string, string> = {
+      'recent-desc': 'e.mtime DESC, sm.code COLLATE NOCASE ASC',
+      'code-asc': "sm.code COLLATE NOCASE ASC, e.mtime DESC",
+      'release-desc': "sm.releaseDate DESC, e.mtime DESC",
+      'duration-desc': 'sm.durationMin DESC, e.mtime DESC',
+      'title-asc': 'sm.title COLLATE NOCASE ASC, e.mtime DESC'
+    }
+    const rows = this.db.prepare(`SELECT sm.entryId,sm.code,sm.title,sm.releaseDate,sm.durationMin,sm.actors,sm.tags,e.favorite,e.mtime ${where} ORDER BY ${orders[sort] ?? orders['recent-desc']!} LIMIT ? OFFSET ?`).all(limit, offset) as Row[]
+    const total = this.db.prepare(`SELECT count(*) ${where}`).pluck().get() as number
+    const items = rows.map(row => ({
+      entryId: String(row.entryId), code: String(row.code ?? ''), title: String(row.title ?? ''),
+      releaseDate: String(row.releaseDate ?? ''), durationMin: Number(row.durationMin) || 0,
+      actors: parseStringArray(row.actors), tags: parseStringArray(row.tags),
+      favorite: Number(row.favorite) || 0, mtime: Number(row.mtime) || 0
+    }))
+    return { total, items }
+  }
+  movieCount() {
+    return this.db.prepare("SELECT count(*) FROM scrape_metadata sm JOIN entries e ON e.id=sm.entryId JOIN roots r ON r.id=e.rootId WHERE e.state='present' AND r.active=1").pluck().get() as number
   }
   actressMissingProfiles(limit: number) {
     const workCount = "(SELECT count(*) FROM entry_actors wea JOIN entries we ON we.id=wea.entryId JOIN roots wr ON wr.id=we.rootId WHERE wea.actressId=a.id AND we.state='present' AND we.kind='video' AND wr.active=1)"
@@ -321,9 +386,9 @@ export class LibraryDatabase {
     return value ?? null
   }
   actressProfilePatch(id: string, data: Row) {
-    this.db.prepare('UPDATE actresses SET birthDate=@birthDate,height=@height,bust=@bust,waist=@waist,hips=@hips,cup=@cup,aliases=@aliases,profileSource=@profileSource,profileAt=@profileAt WHERE id=@id')
+    this.db.prepare("UPDATE actresses SET japaneseName=@japaneseName,chineseName=CASE WHEN chineseName='' THEN @chineseName ELSE chineseName END,birthDate=@birthDate,height=@height,bust=@bust,waist=@waist,hips=@hips,cup=@cup,aliases=@aliases,profileSource=@profileSource,profileAt=@profileAt WHERE id=@id")
       .run({
-        id, birthDate: String(data.birthDate ?? '').slice(0, 10),
+        id, japaneseName: String(data.japaneseName ?? '').trim().slice(0, 64), chineseName: String(data.chineseName ?? '').trim().slice(0, 64), birthDate: String(data.birthDate ?? '').slice(0, 10),
         height: clampCount(data.height), bust: clampCount(data.bust), waist: clampCount(data.waist), hips: clampCount(data.hips),
         cup: String(data.cup ?? '').trim().slice(0, 4), aliases: JSON.stringify(parseStringArray(data.aliases).slice(0, 16)),
         profileSource: String(data.profileSource ?? '').slice(0, 40), profileAt: Math.round(Number(data.profileAt)) || Date.now()

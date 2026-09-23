@@ -17,7 +17,8 @@ export const querySchema = z.object({
   kinds: z.array(z.enum(['image', 'video'])).max(2).default([]), extensions: z.array(z.string().max(20)).max(30).default([]),
   tags: z.array(z.string().max(64)).max(30).default([]), favorite: z.boolean().default(false),
   actress: z.string().max(64).default(''),
-  sort: z.enum(['name', 'mtime', 'size', 'duration']).default('name'), direction: z.enum(['asc', 'desc']).default('asc'),
+  sort: z.enum(['name', 'mtime', 'size', 'duration', 'code', 'release', 'title']).default('name'), direction: z.enum(['asc', 'desc']).default('asc'),
+  movies: z.boolean().default(false),
   minSize: z.number().nonnegative().nullable().default(null), maxSize: z.number().nonnegative().nullable().default(null),
   after: z.number().nonnegative().nullable().default(null), before: z.number().nonnegative().nullable().default(null),
   minDuration: z.number().nonnegative().nullable().default(null), maxDuration: z.number().nonnegative().nullable().default(null)
@@ -38,11 +39,16 @@ export type ScrapePreview = { entryId: string; codes: string[]; candidates: Scra
 export type ScrapeProviderInfo = { id: string; label: string; description: string; kind: 'movie' | 'auxiliary' }
 export type ScrapeStats = { videos: number; scraped: number; covers: number }
 export type ActressSort = 'work-desc' | 'work-asc' | 'name-asc' | 'age-asc' | 'age-desc' | 'recent-desc'
-export type Actress = { id: string; name: string; birthDate: string; height: number; bust: number; waist: number; hips: number; cup: string; aliases: string[]; profileSource: string; profileAt: number; workCount: number; recentAt: number | null; coverEntryId: string | null }
+export type Actress = { id: string; name: string; japaneseName: string; chineseName: string; birthDate: string; height: number; bust: number; waist: number; hips: number; cup: string; aliases: string[]; profileSource: string; profileAt: number; workCount: number; recentAt: number | null; coverEntryId: string | null }
 export type ActressPage = { items: Actress[]; total: number }
 export type ActressEnrichState = { started: boolean; pending: number }
+export type ActressProfileInput = { name: string; japaneseName: string; chineseName: string; birthDate: string; height: number; bust: number; waist: number; hips: number; cup: string }
+export type ActressCoverOption = { entryId: string; code: string; title: string; releaseDate: string; hasCover: number; favorite: number }
+export type MovieSort = 'recent-desc' | 'code-asc' | 'release-desc' | 'duration-desc' | 'title-asc'
+export type MovieCard = { entryId: string; code: string; title: string; releaseDate: string; durationMin: number; actors: string[]; tags: string[]; favorite: number; mtime: number }
+export type MoviePage = { items: MovieCard[]; total: number }
 export type VMEvent = { topic: string; data?: unknown; sequence: number }
-export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; actressCount: number; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
+export type Bootstrap = { roots: Root[]; tags: { name: string; count: number }[]; actressCount: number; movieCount: number; plugins: PluginInfo[]; settings: Record<string, unknown>; tasks: Task[]; libraryId: string; libraries: { id: string; name: string }[]; version: string }
 
 export type VideoPlayer='chromium'|'mpv'|'system'
 export const mpvBoundsSchema=z.object({x:z.number().int().min(0).max(32768),y:z.number().int().min(0).max(32768),width:z.number().int().min(0).max(32768),height:z.number().int().min(0).max(32768)})
@@ -106,6 +112,10 @@ export interface VMApi {
   scrapeRun(selection: Selection): Promise<Task>
   actresses(sort: ActressSort, offset: number, limit: number): Promise<ActressPage>
   actressEnrich(): Promise<ActressEnrichState>
+  actressUpdate(id: string, data: ActressProfileInput): Promise<void>
+  actressCoverOptions(id: string): Promise<ActressCoverOption[]>
+  actressSetCover(id: string, entryId: string): Promise<void>
+  javMovies(sort: MovieSort, offset: number, limit: number): Promise<MoviePage>
   onEvent(callback: (event: VMEvent) => void): () => void
 }
 declare global { interface Window { vm: VMApi } }
@@ -131,5 +141,13 @@ export const ipcSchemas = {
   settings: z.tuple([z.record(z.string(), z.unknown())]), clearCache: z.tuple([]), pruneStorage: z.tuple([]), exportLibrary: z.tuple([]), importLibrary: z.tuple([]), switchLibrary: z.tuple([id]), diagnostics: z.tuple([]),
   scrapeProviders: z.tuple([]), scrapeStats: z.tuple([]), scrapePreview: z.tuple([id]), scrapeSearch: z.tuple([id, z.string().min(1).max(40)]),
   scrapeApply: z.tuple([id, z.string().min(1).max(40)]), scrapeMeta: z.tuple([id]), scrapeSetCover: z.tuple([id]), scrapeClear: z.tuple([id]), scrapeRun: z.tuple([selection]),
-  actresses: z.tuple([z.enum(['work-desc','work-asc','name-asc','age-asc','age-desc','recent-desc']), z.number().int().nonnegative().max(1e6), z.number().int().min(1).max(200)]), actressEnrich: z.tuple([])
+  actresses: z.tuple([z.enum(['work-desc','work-asc','name-asc','age-asc','age-desc','recent-desc']), z.number().int().nonnegative().max(1e6), z.number().int().min(1).max(200)]), actressEnrich: z.tuple([]),
+  actressUpdate: z.tuple([id, z.object({
+    name: z.string().trim().min(1).max(64), japaneseName: z.string().max(64).default(''), chineseName: z.string().max(64).default(''),
+    birthDate: z.string().max(10).default(''), height: z.number().int().min(0).max(300).default(0),
+    bust: z.number().int().min(0).max(300).default(0), waist: z.number().int().min(0).max(300).default(0), hips: z.number().int().min(0).max(300).default(0),
+    cup: z.string().max(4).default('')
+  })]),
+  actressCoverOptions: z.tuple([id]), actressSetCover: z.tuple([id, id]),
+  javMovies: z.tuple([z.enum(['recent-desc','code-asc','release-desc','duration-desc','title-asc']), z.number().int().nonnegative().max(1e6), z.number().int().min(1).max(200)])
 }

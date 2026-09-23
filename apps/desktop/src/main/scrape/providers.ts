@@ -119,7 +119,9 @@ async function lookupJavBus(code: string): Promise<ScrapeInfo> {
   })
   const coverUrl = absoluteUrl('https://www.javbus.com/', $('meta[property="og:image"]').attr('content') ?? $('a.bigImage').attr('href') ?? $('img.cover, .bigImage img').first().attr('src') ?? '')
   if (!title && !tags.length && !actors.length) throw new ScrapeNotFound()
-  const finalCode = stripAddedPrefix(codeText || rewrite.request, rewrite)
+  // 详情页一定带识别码；缺失说明命中的是站点的错误/占位模板，避免把无关页面元素当成刮削结果。
+  if (!codeText) throw new ScrapeNotFound()
+  const finalCode = stripAddedPrefix(codeText, rewrite)
   return {
     provider: 'javbus',
     code: finalCode.toUpperCase(),

@@ -1,15 +1,17 @@
-// 女优资料补全：按名字从 みんなのAV（minnano-av.com）查询，或按番号从 JavDatabase 查询。
-// 生日、身高、三围与罩杯。解析逻辑移植自 JavBoss internal/jav（minnanoav.go / javdatabase.go）；
+// 女优资料补全：按名字从 みんなのAV（minnano-av.com）与 JavModel（javmodel.com）查询，
+// 或按番号从 JavDatabase 查询。生日、身高、三围、罩杯与日文/中文名。
+// 解析逻辑移植自 JavBoss internal/jav（minnanoav.go / javmodel.go / javdatabase.go）；
 // 请求经系统代理并按域名限速。
 import * as cheerio from 'cheerio'
 import type { CheerioAPI } from 'cheerio'
 import { absoluteUrl, fetchText, ScrapeNotFound } from './http'
 
-export type ActressProfileSource = 'minnanoav' | 'javdatabase'
+export type ActressProfileSource = 'minnanoav' | 'javmodel' | 'javdatabase'
 
 export type ActressProfile = {
   japaneseName: string
   romanName: string
+  chineseName: string
   birthDate: string
   height: number
   bust: number
@@ -17,7 +19,7 @@ export type ActressProfile = {
   hips: number
   cup: string
   aliases: string[]
-  source: ActressProfileSource
+  source: string
 }
 
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim()
@@ -124,6 +126,7 @@ export async function lookupActressProfile(rawName: string): Promise<ActressProf
   return {
     japaneseName: parsed.japaneseName,
     romanName: parsed.romanName,
+    chineseName: '',
     birthDate: parsed.birthDate,
     height: parsed.sizes.height,
     bust: parsed.sizes.bust,
@@ -133,6 +136,100 @@ export async function lookupActressProfile(rawName: string): Promise<ActressProf
     aliases: parsed.aliases,
     source: 'minnanoav'
   }
+}
+
+// ---------------------------------------------------------------- JavModel ----
+
+const JAVMODEL_BASE = 'https://javmodel.com'
+
+// 与 JavBoss containsJapaneseRunes 一致：假名/汉字/半角片假名均视为日文名。
+const containsCjk = (value: string) => /[\u3040-\u30ff\u31f0-\u31ff\u4e00-\u9fff\uff66-\uff9d]/.test(value)
+
+const ENGLISH_MONTHS = new Map([['january', 1], ['february', 2], ['march', 3], ['april', 4], ['may', 5], ['june', 6], ['july', 7], ['august', 8], ['september', 9], ['october', 10], ['november', 11], ['december', 12]])
+
+const toIsoDate = (year: string, month: string, day: string): string => {
+  const y = Number(year), m = Number(month), d = Number(day)
+  if (!y || !m || !d || m > 12 || d > 31) return ''
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return ''
+  return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+// JavModel 生日格式宽泛：ISO、斜杠（首段>12 视为日/月/年，与 JavBoss 一致）、英文月名。
+function parseFlexibleBirthDate(value: string): string {
+  const text = clean(value)
+  if (!text) return ''
+  let match = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(text)
+  if (match) return toIsoDate(match[1]!, match[2]!, match[3]!)
+  match = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(text)
+  if (match) {
+    return Number(match[1]) > 12
+      ? toIsoDate(match[3]!, match[2]!, match[1]!)
+      : toIsoDate(match[3]!, match[1]!, match[2]!)
+  }
+  match = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/.exec(text)
+  if (match) {
+    const month = ENGLISH_MONTHS.get(match[1]!.toLowerCase())
+    if (month) return toIsoDate(match[3]!, String(month), match[2]!)
+  }
+  return ''
+}
+
+// JavModel 按名字补全（移植 JavBoss LookupActressByName）：搜索 → 详情页 → 资料卡。
+// 独有优势是提供中文名（h2 中 “日文名 - 中文名” 形式）与罗马名。
+export async function lookupActressProfileByModel(rawName: string): Promise<ActressProfile | null> {
+  const name = normalizeName(rawName)
+  if (!name) return null
+  const headers = { 'Accept-Language': 'en-US,en;q=0.9' }
+  const searchUrl = `${JAVMODEL_BASE}/jav/search.html?q=${encodeURIComponent(name)}`
+  const search = await fetchText(searchUrl, { intervalMs: 500, headers, referer: JAVMODEL_BASE + '/' })
+  const $ = cheerio.load(search.body)
+  const card = $('div.card.flq-card-blog').first()
+  if (!card.length) return null
+  const link = card.find('h5.card-title a').first()
+  const romanFromCard = clean(link.text()) || clean(card.find('h5.card-title').first().text())
+  // 详情地址优先由罗马名生成 slug（与 JavBoss 一致），失败回退搜索结果链接。
+  const slug = romanFromCard.split(/\s+/).filter(Boolean).map(encodeURIComponent).join('-')
+  const detailUrl = slug ? `${JAVMODEL_BASE}/jav/${slug}` : absoluteUrl(search.finalUrl, link.attr('href') ?? '')
+  if (!detailUrl) return null
+  const detail = await fetchText(detailUrl, { intervalMs: 500, headers, referer: searchUrl })
+  // 详情页不存在时站点会重定向（跳回首页等），与 JavBoss 一致视为未找到。
+  const samePath = (url: string) => { try { return new URL(url).pathname.replace(/\/+$/, '').toLowerCase() } catch { return '' } }
+  if (samePath(detail.finalUrl) !== samePath(detailUrl)) return null
+  const parsed = parseJavModelProfile(detail.body)
+  if (!parsed) return null
+  // 名字校验：日文名与输入一致，或输入与罗马名一致（大小写不敏感），避免同名误绑。
+  if (parsed.japaneseName !== name && parsed.romanName.toLowerCase() !== name.toLowerCase()) return null
+  return { ...parsed, cup: '', aliases: [], source: 'javmodel' }
+}
+
+export function parseJavModelProfile(html: string): { romanName: string; japaneseName: string; chineseName: string; birthDate: string; height: number; bust: number; waist: number; hips: number } | null {
+  const $ = cheerio.load(html)
+  const profile = $('div.col-12.col-lg-7.col-xxl-8.remove-animation.card').first()
+  if (!profile.length) return null
+  const romanName = clean(profile.find('h1').first().text())
+  // h2 名字行按连字符拆分：日文名取首个含假名/汉字的部分，中文名取首个不同的部分（与 JavBoss 一致）。
+  const nameLine = clean(profile.find('h2').first().text())
+  const parts = nameLine.split(/\s*[-–—]\s*/).map(part => clean(part)).filter(Boolean)
+  const japaneseName = parts.find(part => containsCjk(part)) ?? parts[0] ?? ''
+  const chineseName = parts.find(part => part && part !== japaneseName) ?? ''
+  const fields: Record<string, string> = {}
+  profile.find('tr').each((_, row) => {
+    const cells = $(row).children('th,td')
+    if (cells.length < 2) return
+    const label = clean(cells.first()!.text()).toLowerCase()
+    const value = clean(cells.last()!.text())
+    if (label && value && fields[label] === undefined) fields[label] = value
+  })
+  const findField = (...labels: string[]) => { for (const label of labels) if (fields[label]) return fields[label]!; return '' }
+  const height = Number(/(\d{2,3})/.exec(findField('height'))?.[1] ?? 0) || 0
+  const bust = Number(/(\d{2,3})/.exec(findField('breast', 'bust'))?.[1] ?? 0) || 0
+  const waist = Number(/(\d{2,3})/.exec(findField('waist'))?.[1] ?? 0) || 0
+  const hips = Number(/(\d{2,3})/.exec(findField('hip', 'hips'))?.[1] ?? 0) || 0
+  const birthDate = parseFlexibleBirthDate(findField('birthday', 'born', 'date of birth'))
+  if (!japaneseName) return null
+  if (!birthDate && !height && !bust) return null
+  return { romanName, japaneseName, chineseName, birthDate, height, bust, waist, hips }
 }
 
 // ---------------------------------------------------------------- JavDatabase ----
@@ -227,5 +324,33 @@ function parseJavDatabaseActressPage(html: string): ActressProfile | null {
     ?? ''
   if (!japaneseName && !romanName) return null
   if (!height && !bust && !birthDate && !cup) return null
-  return { japaneseName: japaneseName || romanName, romanName: japaneseName ? romanName : '', birthDate, height, bust, waist, hips, cup, aliases: [], source: 'javdatabase' }
+  return { japaneseName: japaneseName || romanName, romanName: japaneseName ? romanName : '', chineseName: '', birthDate, height, bust, waist, hips, cup, aliases: [], source: 'javdatabase' }
+}
+
+// 聚合多个数据源的资料：按传入顺序取首个非空字段（名字源精确匹配优先，番号源兜底），别名取并集。
+export function mergeActressProfiles(profiles: ActressProfile[]): ActressProfile | null {
+  if (!profiles.length) return null
+  const text = (get: (profile: ActressProfile) => string) => {
+    for (const profile of profiles) { const value = get(profile); if (value) return value }
+    return ''
+  }
+  const count = (get: (profile: ActressProfile) => number) => {
+    for (const profile of profiles) { const value = get(profile); if (value > 0) return value }
+    return 0
+  }
+  const aliases: string[] = []
+  for (const profile of profiles) for (const alias of profile.aliases) if (!aliases.includes(alias)) aliases.push(alias)
+  return {
+    japaneseName: text(profile => profile.japaneseName),
+    romanName: text(profile => profile.romanName),
+    chineseName: text(profile => profile.chineseName),
+    birthDate: text(profile => profile.birthDate),
+    height: count(profile => profile.height),
+    bust: count(profile => profile.bust),
+    waist: count(profile => profile.waist),
+    hips: count(profile => profile.hips),
+    cup: text(profile => profile.cup),
+    aliases: aliases.slice(0, 16),
+    source: profiles.map(profile => profile.source).join('+')
+  }
 }

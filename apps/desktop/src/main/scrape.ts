@@ -7,7 +7,7 @@ import type { WorkerClient } from './worker'
 import type { MediaService } from './media'
 import { extractCodesFromName } from './scrape/parse'
 import { providers, providerById } from './scrape/providers'
-import { lookupActressProfile, lookupActressProfileByCode } from './scrape/actress'
+import { lookupActressProfile, lookupActressProfileByCode, lookupActressProfileByModel, mergeActressProfiles } from './scrape/actress'
 import { ScrapeNotFound, downloadImage } from './scrape/http'
 
 const LOG_NAME = 'scrape.log'
@@ -328,8 +328,9 @@ ${tags.map(tag => `  <genre>${escape(tag)}</genre>\n  <tag>${escape(tag)}</tag>`
   }
 
   // 女优资料补全：为缺少资料（profileAt=0）且有作品的女优后台查询。
-  // 双数据源（参考 JavBoss）：先按名字查 MinnanoAV，未命中再按已刮削番号查 JavDatabase。
-  // 网络失败保留 profileAt=0 以便下次重试；两个源都确认无资料则标记跳过，避免反复查询。
+  // 三数据源聚合（参考 JavBoss）：先按名字查 MinnanoAV 与 JavModel（补充日文/中文名），
+  // 体型数据不齐时再按已刮削番号查 JavDatabase，最后合并各源字段。
+  // 网络失败保留 profileAt=0 以便下次重试；所有源都确认无资料则标记跳过，避免反复查询。
   async enrichActresses(): Promise<{ started: boolean; pending: number }> {
     const targets = await this.db.call<{ id: string; name: string }[]>('actressMissingProfiles', 100)
     if (!targets.length) return { started: false, pending: 0 }
@@ -343,28 +344,37 @@ ${tags.map(tag => `  <genre>${escape(tag)}</genre>\n  <tag>${escape(tag)}</tag>`
     let updated = 0
     try {
       for (const target of targets) {
-        let profile: Awaited<ReturnType<typeof lookupActressProfile>> = null
         let networkError: unknown = null
+        const collected: NonNullable<Awaited<ReturnType<typeof lookupActressProfile>>>[] = []
         try {
-          profile = await lookupActressProfile(target.name)
+          const profile = await lookupActressProfile(target.name)
+          if (profile) collected.push(profile)
         } catch (error) {
           networkError = error
         }
-        if (!profile) {
+        try {
+          const profile = await lookupActressProfileByModel(target.name)
+          if (profile) collected.push(profile)
+        } catch (error) {
+          networkError = networkError ?? error
+        }
+        let merged = mergeActressProfiles(collected)
+        if (!merged || !merged.birthDate || !merged.height) {
           const code = await this.db.call<string | null>('actressSampleCode', target.id).catch(() => null)
           if (code) {
             try {
-              profile = await lookupActressProfileByCode(code)
+              const profile = await lookupActressProfileByCode(code)
+              if (profile) { collected.push(profile); merged = mergeActressProfiles(collected) }
             } catch (error) {
               networkError = networkError ?? error
             }
           }
         }
         try {
-          if (profile) {
-            await this.db.call('actressProfilePatch', target.id, { ...profile, profileAt: Date.now() })
+          if (merged) {
+            await this.db.call('actressProfilePatch', target.id, { ...merged, profileAt: Date.now() })
             updated++
-            await this.log('actress-profile', target.name, `已补全资料 · ${profile.birthDate || '生日未知'} · ${profile.source}`)
+            await this.log('actress-profile', target.name, `已补全资料 · ${merged.birthDate || '生日未知'} · ${merged.source}`)
           } else if (networkError) {
             // 网络异常不标记，下次打开女优页时重试。
             await this.log('actress-profile-failed', target.name, networkError)

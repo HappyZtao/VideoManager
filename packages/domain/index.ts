@@ -37,11 +37,21 @@ export function compileQuery(q: QuerySpec): { where: string; params: unknown[]; 
   if (q.favorite) clauses.push('e.favorite=1')
   for (const tag of q.tags) { clauses.push('EXISTS(SELECT 1 FROM entry_tags t WHERE t.entryId=e.id AND t.tag=?)'); params.push(tag) }
   if (q.actress) { clauses.push('EXISTS(SELECT 1 FROM entry_actors fa JOIN actresses faa ON faa.id=fa.actressId WHERE fa.entryId=e.id AND faa.name=?)'); params.push(q.actress) }
+  if (q.movies) clauses.push('EXISTS(SELECT 1 FROM scrape_metadata movie_scope WHERE movie_scope.entryId=e.id)')
   for (const [key, op, value] of [['size','>=',q.minSize], ['size','<=',q.maxSize], ['mtime','>=',q.after], ['mtime','<=',q.before], ['duration','>=',q.minDuration], ['duration','<=',q.maxDuration]] as const) {
     if (value !== null) { clauses.push(`e.${key}${op}?`); params.push(value) }
   }
-  const fields: Record<string, string> = { name: 'sortKey', mtime: 'mtime', size: 'size', duration: 'duration' }
-  const expr = `e.${fields[q.sort]}`
+  // 电影会话（movies）与电影列表共用排序键：code/release/title/duration 取自刮削元数据。
+  const fields: Record<string, string> = q.movies
+    ? {
+        mtime: 'e.mtime',
+        code: '(SELECT sm.code FROM scrape_metadata sm WHERE sm.entryId=e.id) COLLATE NOCASE',
+        release: '(SELECT sm.releaseDate FROM scrape_metadata sm WHERE sm.entryId=e.id)',
+        title: '(SELECT sm.title FROM scrape_metadata sm WHERE sm.entryId=e.id) COLLATE NOCASE',
+        duration: '(SELECT sm.durationMin FROM scrape_metadata sm WHERE sm.entryId=e.id)'
+      }
+    : { name: 'e.sortKey', mtime: 'e.mtime', size: 'e.size', duration: 'e.duration' }
+  const expr = fields[q.sort] ?? 'e.sortKey'
   return { where: clauses.join(' AND '), params, order: `(e.kind='folder') DESC, ${expr} IS NULL ASC, ${expr} ${q.direction === 'desc' ? 'DESC' : 'ASC'}, e.id` }
 }
 export function parseRange(header: string | null, size: number): { start: number; end: number; partial: boolean } | null {
