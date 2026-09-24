@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Sparkles,ChevronUp,ChevronDown,Clapperboard,Info } from 'lucide-react'
 import type { ScrapeStats } from '../../../../packages/contracts'
-import { IconButton } from './components'
+import { IconButton,Toggle } from './components'
 
 type SaveFn = (patch: Record<string, unknown>) => void
 type RunFn = (label: string, action: () => Promise<unknown>) => Promise<unknown>
@@ -31,7 +31,7 @@ export function ScrapeSettings({settings,busy,save,run,notify}:{settings:Record<
   <p className="muted">根据文件名中的番号，从公开资料站自动匹配标题、封面、演员与分类。所有查询只保存在本机媒体库中。</p>
   <div className="setting-row">
     <div><strong>启用视频刮削</strong><small>关闭后，条目菜单与批量刮削将不可用；已保存的刮削数据会保留展示。</small></div>
-    <button className={'switch'+(enabled?' on':'')} role="switch" aria-checked={enabled} aria-label="启用视频刮削" disabled={busy} onClick={()=>save({scrapeEnabled:!enabled})}><span/></button>
+    <Toggle on={enabled} busy={busy} label="启用视频刮削" onChange={()=>save({scrapeEnabled:!enabled})}/>
   </div>
   {!enabled&&<div className="performance-tip"><Sparkles size={18}/><p><strong>刮削未启用</strong>。打开上方开关后，即可在视频的「更多操作」菜单中使用「刮削元数据」，或选中多个视频批量刮削。</p></div>}
   <div className="setting-row">
@@ -40,11 +40,11 @@ export function ScrapeSettings({settings,busy,save,run,notify}:{settings:Record<
   </div>
   <div className="setting-row">
     <div><strong>自动下载封面</strong><small>匹配成功后把封面图下载到媒体库数据目录，可随时在刮削面板中设为条目封面。</small></div>
-    <button className={'switch'+(settings.scrapeDownloadCover!==false?' on':'')} role="switch" aria-checked={settings.scrapeDownloadCover!==false} aria-label="自动下载封面" disabled={busy} onClick={()=>save({scrapeDownloadCover:settings.scrapeDownloadCover===false})}><span/></button>
+    <Toggle on={settings.scrapeDownloadCover!==false} busy={busy} label="自动下载封面" onChange={()=>save({scrapeDownloadCover:settings.scrapeDownloadCover===false})}/>
   </div>
   <div className="setting-row">
     <div><strong>自动将刮削封面设为条目封面</strong><small>匹配到封面后立即替换卡片显示的封面（原自动封面可在刮削面板中恢复）。关闭后仍可在刮削面板手动设置。</small></div>
-    <button className={'switch'+(settings.scrapeAutoSetCover!==false?' on':'')} role="switch" aria-checked={settings.scrapeAutoSetCover!==false} aria-label="自动将刮削封面设为条目封面" disabled={busy} onClick={()=>save({scrapeAutoSetCover:settings.scrapeAutoSetCover===false})}><span/></button>
+    <Toggle on={settings.scrapeAutoSetCover!==false} busy={busy} label="自动将刮削封面设为条目封面" onChange={()=>save({scrapeAutoSetCover:settings.scrapeAutoSetCover===false})}/>
   </div>
   <div className="setting-row">
     <div><strong>系统代理</strong><small>自动跟随 Windows 系统代理（含 PAC 分流）访问数据源与图片 CDN，无需手动配置；更改代理后重启应用生效。</small></div>
@@ -63,7 +63,7 @@ export function ScrapeSettings({settings,busy,save,run,notify}:{settings:Record<
          <IconButton label={`上移 ${provider.label}`} disabled={!checked||index<=0||busy} onClick={()=>move(provider.id,-1)}><ChevronUp size={14}/></IconButton>
          <IconButton label={`下移 ${provider.label}`} disabled={!checked||index<0||index>=chain.length-1||busy} onClick={()=>move(provider.id,1)}><ChevronDown size={14}/></IconButton>
        </div>
-       <button className={'switch'+(checked?' on':'')} role="switch" aria-checked={checked} aria-label={'使用 '+provider.label} disabled={busy||provider.kind==='auxiliary'} onClick={()=>toggle(provider.id,!checked)}><span/></button>
+       <Toggle on={checked} busy={busy||provider.kind==='auxiliary'} label={'使用 '+provider.label} onChange={()=>toggle(provider.id,!checked)}/>
      </div>
    })}
    {!providers.length&&!providersQuery.isPending&&<p className="muted">数据源列表加载失败，请重启应用。</p>}

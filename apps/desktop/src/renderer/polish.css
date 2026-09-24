@@ -1,0 +1,241 @@
+/* ============================================================
+   VideoManager · 视觉与动效打磨层 v2（HeroUI + Tailwind CSS 4）
+   - Tailwind 以 layer 形式注入（theme/base/utilities），
+     未分层的既有 styles.css 始终优先，保证既有功能与布局零回归。
+   - HeroUI 主题经 hero.ts 桥接：主色跟随运行时强调色 --accent。
+   - 本层按“相同选择器、更后位置”实现覆盖，仅做视觉与动效增强。
+   ============================================================ */
+@import 'tailwindcss';
+@plugin './hero.ts';
+/* HeroUI 组件（Switch/Tooltip/Progress）的结构与外观均由下方 .vm-* 规则手写实现，
+   不扫描 @heroui/* dist，避免把全量组件工具类打进产物（CSS 体积 326KB → ~90KB）。 */
+
+/* ---------- HeroUI 令牌桥接：让 HeroUI 组件跟随应用强调色与主题 ---------- */
+:root{--heroui-primary:var(--accent);--heroui-primary-foreground:var(--on-accent);--heroui-focus:var(--accent)}
+
+/* ---------- 动效令牌 ---------- */
+:root{
+ --ease-spring:cubic-bezier(.34,1.56,.64,1);
+ --ease-out-quart:cubic-bezier(.25,1,.5,1);
+ --dur-fast:150ms;--dur-med:240ms;--dur-slow:420ms;
+}
+@keyframes rise-in{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes overlay-in{from{opacity:0}}
+@keyframes overlay-out{to{opacity:0}}
+@keyframes modal-in{from{opacity:0;transform:translate(-50%,-50%) scale(.95) translateY(12px)}to{opacity:1;transform:translate(-50%,-50%)}}
+@keyframes modal-out{to{opacity:0;transform:translate(-50%,-50%) scale(.96) translateY(8px)}}
+@keyframes float-in{from{opacity:0;transform:scale(.96) translateY(-5px)}}
+@keyframes float-out{to{opacity:0;transform:scale(.97) translateY(-3px)}}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,14px) scale(.96)}}
+@keyframes indicator-in{from{transform:scaleY(.15);opacity:0}}
+@keyframes badge-in{from{transform:scale(.55);opacity:0}}
+@keyframes dot-pulse{0%{box-shadow:0 0 0 0 #eab30859}75%{box-shadow:0 0 0 5px transparent}100%{box-shadow:0 0 0 5px transparent}}
+@keyframes halo{0%{transform:scale(.55);opacity:.85}72%{transform:scale(1.7);opacity:0}100%{transform:scale(1.7);opacity:0}}
+@keyframes folder-bob{0%,100%{transform:rotate(5deg) translateY(0)}50%{transform:rotate(5deg) translateY(-7px)}}
+@keyframes sheet-bob{0%,100%{transform:rotate(-8deg) translateY(0)}50%{transform:rotate(-6.4deg) translateY(-4px)}}
+@keyframes sheet-bob-back{0%,100%{transform:rotate(11deg) translateY(0)}50%{transform:rotate(9.4deg) translateY(-5px)}}
+@keyframes progress-shine{from{transform:translateX(-100%)}to{transform:translateX(220%)}}
+
+/* ---------- 全局文字渲染 ---------- */
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* ---------- 氛围背景：极光渐变 + 玻璃面板 ---------- */
+.app{background:
+ radial-gradient(1100px 520px at 86% -12%,color-mix(in srgb,var(--accent) 10%,transparent),transparent 62%),
+ radial-gradient(900px 500px at -12% 112%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 58%),
+ var(--canvas)}
+.main{background:none}
+.titlebar{background:color-mix(in srgb,var(--canvas) 62%,transparent);backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 14%,var(--border))}
+.sidebar{background:color-mix(in srgb,var(--sidebar) 74%,transparent);backdrop-filter:blur(16px) saturate(1.35);border-right-color:color-mix(in srgb,var(--border) 72%,transparent)}
+.pathbar{background:color-mix(in srgb,var(--canvas) 72%,transparent);backdrop-filter:blur(14px) saturate(1.25);border-bottom-color:color-mix(in srgb,var(--border) 78%,transparent)}
+.statusbar{background:color-mix(in srgb,var(--sidebar) 82%,transparent);backdrop-filter:blur(12px);border-top-color:color-mix(in srgb,var(--border) 72%,transparent)}
+
+/* ---------- 品牌标识：渐变徽标 ---------- */
+.brand-mini,.brand-mark{background:linear-gradient(135deg,color-mix(in oklab,var(--accent) 84%,#fff 16%),var(--accent) 58%,color-mix(in oklab,var(--accent) 86%,#000 14%));box-shadow:0 6px 18px var(--accent-dim),inset 0 1px 0 #ffffff33}
+
+/* ---------- 侧边栏导航：滑入指示条 + 图标微动效 ---------- */
+.nav-button{position:relative;border-radius:9px;transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.nav-button.selected{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 15%,transparent),color-mix(in srgb,var(--accent) 6%,transparent) 62%,transparent)}
+.nav-button.selected::before{content:'';position:absolute;left:0;top:26%;bottom:26%;width:3px;border-radius:99px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 45%,transparent));animation:indicator-in 340ms var(--ease-spring)}
+.nav-button svg{transition:transform 240ms var(--ease-spring)}
+.nav-button:hover:not(:disabled) svg{transform:scale(1.1)}
+.nav-button:hover{background:var(--raised)}
+.nav-button.selected:hover{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 20%,transparent),color-mix(in srgb,var(--accent) 9%,transparent) 62%,transparent)}
+.count-badge{animation:badge-in 320ms var(--ease-spring)}
+.sidebar-collapsed .nav-button.selected::before{left:auto;right:6px;top:22%;bottom:22%;width:2.5px}
+.tree-line,.root-line{transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease,padding-left var(--dur-med) var(--ease-out-quart)}
+.status-dot.scanning,.status-dot.checking{animation:dot-pulse 1.7s ease-in-out infinite}
+
+/* ---------- 路径栏与搜索：聚焦光晕 ---------- */
+.search-box{transition:border-color var(--dur-fast) ease,box-shadow var(--dur-med) ease,background-color var(--dur-fast) ease}
+.search-box:focus-within{border-color:color-mix(in srgb,var(--accent) 42%,var(--border));box-shadow:0 0 0 3.5px var(--accent-wash),0 4px 16px var(--shadow-soft)}
+.search-box:focus-within>svg:first-child{color:var(--accent)}
+.path-crumb,.breadcrumb>button{border-radius:6px;transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.navigation-buttons .icon-button:not(:disabled):hover{background:var(--accent-wash);color:var(--accent)}
+
+/* ---------- 页头：eyebrow 渐变刻线 + 标题光点 ---------- */
+.eyebrow{display:flex;align-items:center;gap:9px}
+.eyebrow::before{content:'';width:20px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--accent),transparent)}
+.heading-dot{position:relative}
+.heading-dot::after{content:'';position:absolute;inset:-4.5px;border-radius:50%;border:1.5px solid var(--accent-dim);animation:halo 2.8s ease-out infinite}
+.page-actions .secondary,.page-actions .primary{box-shadow:0 2px 10px var(--shadow-soft)}
+
+/* ---------- 工具栏 ---------- */
+.segmented>button{transition:color var(--dur-fast) ease,background-color var(--dur-fast) ease,box-shadow var(--dur-med) ease}
+.segmented>button.selected{box-shadow:0 1px 5px var(--shadow-soft),inset 0 0 0 1px var(--accent-wash)}
+.type-filter>button{border-radius:7px;transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.type-filter>button.selected{box-shadow:inset 0 0 0 1px var(--accent-wash)}
+.filter-chips>span{transition:transform 200ms var(--ease-spring),box-shadow 200ms ease}
+.filter-chips>span:hover{transform:translateY(-1.5px);box-shadow:0 4px 12px var(--accent-wash)}
+.selection-actions{animation:float-in 240ms var(--ease-spring);border-radius:10px;box-shadow:0 4px 16px var(--accent-wash)}
+.update-banner{animation:rise-in 260ms var(--ease-out-quart)}
+
+/* ---------- 按钮：渐变主键 + 悬浮反馈 ---------- */
+button:not(:disabled):active{transform:scale(.975)}
+.primary{background:linear-gradient(165deg,color-mix(in oklab,var(--accent) 86%,#fff 14%),var(--accent) 52%,color-mix(in oklab,var(--accent) 88%,#000 12%));box-shadow:0 1px 0 #ffffff2b inset,0 6px 20px var(--accent-dim);transition:transform 180ms var(--ease-spring),box-shadow var(--dur-med) ease,filter var(--dur-fast) ease}
+.primary:hover:not(:disabled){filter:saturate(1.08) brightness(1.05);transform:translateY(-1px);box-shadow:0 1px 0 #ffffff2b inset,0 10px 30px var(--accent-dim)}
+.primary:active:not(:disabled){transform:translateY(0) scale(.975)}
+.secondary{transition:transform 180ms var(--ease-spring),box-shadow var(--dur-med) ease,background-color var(--dur-fast) ease,border-color var(--dur-fast) ease}
+.secondary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 18px var(--shadow-soft)}
+.danger-button{background:linear-gradient(165deg,color-mix(in oklab,var(--danger) 86%,#fff 14%),var(--danger) 60%,color-mix(in oklab,var(--danger) 88%,#000 12%));box-shadow:0 1px 0 #ffffff26 inset,0 6px 18px var(--danger-muted);transition:transform 180ms var(--ease-spring),box-shadow var(--dur-med) ease,filter var(--dur-fast) ease}
+.danger-button:hover:not(:disabled){filter:brightness(1.06);transform:translateY(-1px)}
+.icon-button{transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease,transform 180ms var(--ease-spring)}
+.icon-button:hover:not(:disabled){transform:translateY(-1px)}
+.icon-button:active:not(:disabled){transform:scale(.93)}
+.text-button{border-radius:7px;transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+
+/* ---------- 卡片：悬浮抬升 + 封面微缩放 ---------- */
+.card{border-radius:14px;transition:transform var(--dur-med) var(--ease-out-quart),box-shadow var(--dur-med) ease,border-color var(--dur-fast) ease,background-color var(--dur-fast) ease}
+.card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--accent) 30%,var(--hover-border));box-shadow:0 14px 36px var(--shadow-soft),0 3px 9px var(--shadow-soft)}
+.card.selected{box-shadow:0 0 0 1px var(--accent),0 10px 28px color-mix(in srgb,var(--accent) 17%,transparent)}
+.thumbnail img{transition:transform 480ms var(--ease-out-quart)}
+.card:hover .thumbnail img{transform:scale(1.05)}
+.duration,.folder-badge,.offline-badge,.favorite-badge{border-radius:6px;box-shadow:0 2px 8px #00000030}
+.selection-mark{transition:background-color var(--dur-fast) ease,border-color var(--dur-fast) ease,transform 200ms var(--ease-spring)}
+.selection-mark.selected{transform:scale(1.04)}
+.card-more,.quick-view{transition:opacity var(--dur-fast) ease,transform 200ms var(--ease-spring),background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.card:hover .card-more,.list-item:hover .card-more{transform:scale(1)}
+.card-more{transform:scale(.86)}
+.card .quick-view{transform:translateY(4px) scale(.92)}
+.card:hover .quick-view{transform:translateY(0) scale(1)}
+.quick-view:hover{color:var(--accent)}
+.list-item{transition:background-color var(--dur-fast) ease,border-color var(--dur-fast) ease}
+.list-item.selected{box-shadow:inset 2px 0 0 var(--accent)}
+
+/* ---------- 电影 / 演员网格：入场波浪动画（有界网格，安全） ---------- */
+.actress-grid>.card{animation:rise-in 500ms var(--ease-out-quart) backwards}
+.actress-grid>.card:nth-child(2){animation-delay:30ms}
+.actress-grid>.card:nth-child(3){animation-delay:60ms}
+.actress-grid>.card:nth-child(4){animation-delay:90ms}
+.actress-grid>.card:nth-child(5){animation-delay:120ms}
+.actress-grid>.card:nth-child(6){animation-delay:150ms}
+.actress-grid>.card:nth-child(7){animation-delay:180ms}
+.actress-grid>.card:nth-child(8){animation-delay:210ms}
+.actress-grid>.card:nth-child(9){animation-delay:240ms}
+.actress-grid>.card:nth-child(10){animation-delay:270ms}
+.actress-grid>.card:nth-child(11){animation-delay:300ms}
+.actress-grid>.card:nth-child(12){animation-delay:330ms}
+.actress-works{border-radius:6px}
+.actress-quick{transition:opacity var(--dur-fast) ease,transform 220ms var(--ease-spring)}
+.actress-card:hover .actress-quick{transform:translateY(0) scale(1)}
+.actress-quick{transform:translateY(3px) scale(.92)}
+.actress-quick-button{transition:transform 180ms var(--ease-spring),color var(--dur-fast) ease,border-color var(--dur-fast) ease,background-color var(--dur-fast) ease}
+.actress-quick-button:hover{transform:translateY(-2px) scale(1.07)}
+.movie-tags>span{transition:background-color var(--dur-fast) ease,border-color var(--dur-fast) ease}
+.movie-card:hover .movie-tags>span{border-color:var(--accent-dim)}
+
+/* ---------- 空态与欢迎页：悬浮插画 ---------- */
+.art-folder{animation:folder-bob 5.2s ease-in-out infinite}
+.sheet-front{animation:sheet-bob 6.8s ease-in-out infinite}
+.sheet-back{animation:sheet-bob-back 8s ease-in-out infinite}
+.welcome-features>span{transition:color var(--dur-fast) ease,transform 240ms var(--ease-spring)}
+.welcome-features>span:hover{color:var(--secondary);transform:translateY(-2px)}
+.empty-art{transition:transform var(--dur-slow) var(--ease-out-quart)}
+.welcome:hover .empty-art{transform:scale(1.03)}
+
+/* ---------- 弹窗：弹簧入场 + 优雅退场（Radix Presence 驱动） ---------- */
+.modal-overlay{animation:overlay-in 220ms ease;backdrop-filter:blur(8px) saturate(1.15)}
+.modal-overlay[data-state=closed]{animation:overlay-out 170ms ease forwards}
+.modal{border-radius:18px;animation:modal-in 320ms var(--ease-spring);box-shadow:0 40px 120px var(--shadow),inset 0 1px 0 #ffffff12}
+.modal[data-state=closed]{animation:modal-out 190ms ease forwards}
+.modal>header h2{letter-spacing:-.2px}
+.modal-footer>div>button{transition:transform 180ms var(--ease-spring),box-shadow var(--dur-med) ease,filter var(--dur-fast) ease}
+
+/* ---------- 气泡 / 菜单：缩放入场 ---------- */
+.context-menu{transform-origin:var(--radix-dropdown-menu-content-transform-origin,center)}
+.context-menu[data-state=open]{animation:float-in 180ms var(--ease-out-quart)}
+.context-menu[data-state=closed]{animation:float-out 140ms ease forwards}
+.path-popover,.filter-popover,.search-field-popover{transform-origin:var(--radix-popover-content-transform-origin,center)}
+.path-popover[data-state=open],.filter-popover[data-state=open],.search-field-popover[data-state=open]{animation:float-in 210ms var(--ease-out-quart)}
+.path-popover[data-state=closed],.filter-popover[data-state=closed],.search-field-popover[data-state=closed]{animation:float-out 150ms ease forwards}
+.path-popover>div>button{border-radius:9px;transition:background-color var(--dur-fast) ease,transform 200ms var(--ease-out-quart)}
+.path-popover>div>button:hover{transform:translateY(-1px)}
+.tag-filter-options>label{transition:border-color var(--dur-fast) ease,background-color var(--dur-fast) ease,color var(--dur-fast) ease,transform 180ms var(--ease-spring)}
+.tag-filter-options>label:hover{transform:translateY(-1px)}
+
+/* ---------- 轻提示（Toast）：上滑弹簧 + 强调色刻线 ---------- */
+.toast{border-radius:13px;animation:toast-in 340ms var(--ease-spring);background:color-mix(in srgb,var(--raised) 90%,transparent);backdrop-filter:blur(14px) saturate(1.25);box-shadow:0 14px 48px var(--shadow)}
+.toast::before{content:'';position:absolute;left:6px;top:11px;bottom:11px;width:3px;border-radius:99px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 30%,transparent))}
+
+/* ---------- 标签胶囊 / 徽章 ---------- */
+.tag-overview-list>button{transition:border-color var(--dur-fast) ease,background-color var(--dur-fast) ease,color var(--dur-fast) ease,transform 200ms var(--ease-spring),box-shadow var(--dur-med) ease}
+.tag-overview-list>button:hover{transform:translateY(-1.5px);box-shadow:0 5px 14px var(--shadow-soft)}
+.tag-overview-list>button:active{transform:translateY(0) scale(.97)}
+.tag-overview-search:focus-within{border-color:color-mix(in srgb,var(--accent) 42%,var(--border));box-shadow:0 0 0 3px var(--accent-wash)}
+.tag-overview-search{transition:border-color var(--dur-fast) ease,box-shadow var(--dur-med) ease}
+.badge{border-radius:6px}
+.tag-pills>button{transition:transform 180ms var(--ease-spring),background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.tag-pills>button:hover{transform:translateY(-1px)}
+
+/* ---------- 设置面板：分区入场 + 面板悬浮反馈 ---------- */
+.settings-content>*{animation:rise-in 320ms var(--ease-out-quart) backwards}
+.settings-layout>nav>button{position:relative;border-radius:9px;transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease}
+.settings-layout>nav>button.selected{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 15%,transparent),color-mix(in srgb,var(--accent) 5%,transparent) 68%,transparent)}
+.settings-layout>nav>button.selected>svg:last-child{color:var(--accent)}
+.plugin-card,.scrape-provider-row,.root-setting,.task-card,.scrape-card{transition:border-color var(--dur-fast) ease,box-shadow var(--dur-med) ease,background-color var(--dur-fast) ease}
+.plugin-card:hover,.scrape-provider-row:hover{box-shadow:0 8px 26px var(--shadow-soft)}
+.plugin-card.enabled{box-shadow:inset 0 0 0 1px var(--accent-wash)}
+.plugin-icon{transition:background-color var(--dur-med) ease,color var(--dur-med) ease,transform 240ms var(--ease-spring)}
+.plugin-card:hover .plugin-icon{transform:scale(1.06)}
+.setting-row{transition:background-color var(--dur-fast) ease}
+.root-state .status-dot{transition:background-color var(--dur-med) ease}
+.palette-swatch>span{transition:transform 220ms var(--ease-spring),outline-color var(--dur-fast) ease}
+.palette-swatch:hover>span{transform:scale(1.1)}
+.player-option{transition:border-color var(--dur-fast) ease,background-color var(--dur-fast) ease,transform 220ms var(--ease-out-quart),box-shadow var(--dur-med) ease}
+.player-option:hover{transform:translateY(-2px);box-shadow:0 10px 28px var(--shadow-soft)}
+.player-option.selected{box-shadow:0 8px 24px var(--accent-wash)}
+.destination-list>button{transition:background-color var(--dur-fast) ease,color var(--dur-fast) ease,padding-left var(--dur-med) var(--ease-out-quart)}
+.destination-list>button:hover{padding-left:16px}
+.cover-picker-list>button{transition:border-color var(--dur-fast) ease,box-shadow var(--dur-med) ease,transform 200ms var(--ease-out-quart)}
+.cover-picker-list>button:hover{transform:translateX(2px)}
+
+/* ---------- HeroUI 组件外观统一（结构 + 皮肤手写，跟随应用令牌） ---------- */
+/* Switch：轨道 + 滑块，弹簧过渡。 */
+.vm-switch{display:inline-flex;align-items:center;flex:none;min-height:0;position:relative;-webkit-user-select:none;user-select:none;touch-action:none;cursor:pointer}
+.vm-switch:has(input:disabled){cursor:not-allowed;opacity:.4}
+.vm-switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:inherit;z-index:1}
+.vm-switch-track{position:relative;display:inline-flex;align-items:center;flex-direction:row;flex-shrink:0;overflow:hidden;width:34px;height:19px;padding:2px;background:var(--raised);border:1px solid var(--border);border-radius:99px;transition:background-color 200ms ease,border-color 200ms ease,box-shadow 200ms ease;box-sizing:border-box}
+.vm-switch[data-selected] .vm-switch-track{background:var(--accent);border-color:transparent;box-shadow:0 2px 10px var(--accent-dim)}
+.vm-switch-thumb{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;background:#fff;box-shadow:0 1px 4px #00000038;transition:transform 220ms var(--ease-spring)}
+.vm-switch[data-selected] .vm-switch-thumb{transform:translateX(15px)}
+/* Progress：渐变进度条 + 流光。指示条全宽，由组件内联 transform 控制露出比例。 */
+.vm-progress-track{position:relative;display:flex;align-items:center;background:var(--raised);border:1px solid var(--border);border-radius:99px;height:8px;width:100%;overflow:hidden;box-sizing:border-box}
+.vm-progress-track::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff45,transparent);animation:progress-shine 1.7s linear infinite;pointer-events:none}
+.vm-progress-indicator{position:relative;height:100%;width:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 64%,#fff));transition:transform 260ms var(--ease-out-quart)}
+
+/* ---------- 播放器与查看器 ---------- */
+.viewer-arrow{transition:opacity var(--dur-fast) ease,transform 220ms var(--ease-spring),background-color var(--dur-fast) ease}
+.viewer-arrow:hover{transform:scale(1.08);background:color-mix(in srgb,var(--accent) 22%,var(--media-overlay))}
+.mpv-seek-thumb{transition:transform 180ms var(--ease-spring)}
+.mpv-seek-track:hover .mpv-seek-thumb{transform:translateX(-50%) scale(1.25)}
+.mpv-seek-fill{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 78%,#fff),var(--accent))}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{border-radius:99px;border:3px solid transparent;background:color-mix(in srgb,var(--scrollbar) 62%,transparent);background-clip:padding-box;transition:background-color 160ms ease}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 55%,var(--scrollbar));background-clip:padding-box;border-width:2.5px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- 大列表性能保护：虚拟区不做入场动画（与既有策略一致） ---------- */
+.viewport .card,.viewport .list-item{animation:none}
+.modal .skeleton,.settings-content .skeleton{animation:skeleton 1.8s linear infinite;background:linear-gradient(120deg,var(--surface),var(--raised),var(--surface));background-size:200% 100%}

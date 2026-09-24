@@ -1,6 +1,7 @@
 import { useEffect,useState,useSyncExternalStore,type ReactNode,Component } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Dropdown from '@radix-ui/react-dropdown-menu'
+import { Switch } from '@heroui/react'
 import { X,Folder,Image as ImageIcon,Film,LoaderCircle,Check,Star,MoreHorizontal,Eye,Pin,Tag,Pencil,FolderInput,Trash2,Copy,ExternalLink,FolderOpen,ImagePlus,Clapperboard } from 'lucide-react'
 import type { Entry } from '../../../../packages/contracts'
 
@@ -15,6 +16,8 @@ function rememberThumbnail(key:string,url:string){thumbnailCache.delete(key);thu
 export function clearThumbCache(){for(const url of thumbnailCache.values())void window.vm.release(url);thumbnailCache.clear();thumbnailPending.clear();latestThumbnail.clear();thumbnailGeneration++;for(const listener of thumbnailListeners)listener()}
 
 export function IconButton({children,label,onClick,disabled=false,active=false}:{children:ReactNode;label:string;onClick?:()=>void;disabled?:boolean;active?:boolean}){return <button className={'icon-button'+(active?' active':'')} title={label} aria-label={label} onClick={onClick} disabled={disabled}>{children}</button>}
+// 设置开关统一使用 HeroUI Switch（弹簧动效），配色经 --heroui-primary 跟随应用强调色。
+export function Toggle({on,busy=false,label,onChange}:{on:boolean;busy?:boolean;label:string;onChange:()=>void}){return <Switch size="sm" isSelected={on} isDisabled={busy} aria-label={label} classNames={{base:'vm-switch',wrapper:'vm-switch-track',thumb:'vm-switch-thumb'}} onValueChange={onChange}/>}
 export function Modal({title,description,children,onClose,wide=false}:{title:string;description?:string;children:ReactNode;onClose:()=>void;wide?:boolean}){return <Dialog.Root open onOpenChange={open=>{if(!open)onClose()}}><Dialog.Portal><Dialog.Overlay className="modal-overlay"/><Dialog.Content className={'modal'+(wide?' wide':'')} aria-describedby={description?'modal-description':undefined}><header><div><Dialog.Title>{title}</Dialog.Title>{description&&<Dialog.Description id="modal-description">{description}</Dialog.Description>}</div><Dialog.Close asChild><button className="icon-button" aria-label="关闭"><X size={20}/></button></Dialog.Close></header>{children}</Dialog.Content></Dialog.Portal></Dialog.Root>}
 export function Thumb({entry,className=''}:{entry:Entry;className?:string}){
  useSyncExternalStore(subscribeThumbnails,()=>thumbnailGeneration)

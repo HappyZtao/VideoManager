@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Windows 10 / 11" />
     <img src="https://img.shields.io/badge/architecture-x64-4C8BF5" alt="x64" />
-    <img src="https://img.shields.io/badge/version-0.9.0-18A058" alt="Version 0.9.0" />
+    <img src="https://img.shields.io/badge/version-0.9.2-18A058" alt="Version 0.9.2" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-2EA44F" alt="GNU GPL v3.0" /></a>
     <img src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white" alt="Electron 44" />
     <img src="https://img.shields.io/badge/privacy-local--first-7357C8" alt="Local first" />
@@ -30,6 +30,7 @@ VideoManager 是一款面向 Windows 的本地多媒体管理软件。它直接�
 ## 🌟 核心特性
 
 - **本地媒体库** — 直接纳管现有文件夹，媒体保留在原位置，无需导入副本。
+- **现代视觉与动效** — 基于 HeroUI 与 Tailwind CSS 4 的界面打磨：玻璃质感侧边栏与标题栏、极光氛围背景、渐变强调色按钮、弹簧微动效（卡片悬浮抬升、封面缩放、弹窗与浮层出入场、进度条流光），深浅主题与自定义强调色全量适配。
 - **图片与视频统一浏览** — 网格和详细列表两种布局，文件夹与直属媒体分区展示。
 - **高效索引** — 后台扫描、文件变化监听、任务进度显示和大列表虚拟化。
 - **多维搜索** — 支持按文件名、文件夹名、路径和标签搜索，并可组合类型、扩展名、大小、日期、时长及收藏状态筛选。
@@ -204,7 +205,7 @@ Electron Main Process
 | 领域 | 技术 |
 | --- | --- |
 | 桌面运行时 | Electron 44 |
-| 用户界面 | React 19、Radix UI、Lucide、Zustand |
+| 用户界面 | React 19、HeroUI、Tailwind CSS 4、Radix UI、Lucide、Zustand |
 | 构建工具 | TypeScript 7、Vite 6、electron-vite |
 | 查询与虚拟化 | TanStack Query、TanStack Virtual |
 | 数据存储 | SQLite、better-sqlite3、WAL |
